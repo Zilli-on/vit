@@ -28,9 +28,11 @@ Each collaborator works on a branch. Giteo serializes the NLE's timeline state i
 ## Product Philosophy
 
 - **Metadata, not media** — timeline decisions are the merge surface, not video files
-- **Use git, don't reimplement it** — git handles commits, branches, merges, diffs. We handle serialization.
+- **Use git, don't reimplement it** — git handles commits, branches, merges, diffs. We handle serialization. All user-facing commands go through `giteo`, never raw `git`.
 - **Domain-split JSON** — separate files for cuts, color, audio, effects, markers. Different roles = different files = clean merges.
+- **AI-assisted semantic merging** — git handles the easy merges; when cross-domain conflicts arise (e.g., a deleted clip still referenced in color grading), an LLM resolves them intelligently.
 - **Snapshot-based** — each commit captures full timeline state. Simpler than event sourcing, works naturally with git.
+- **No media storage, no database** — we version control JSON metadata only. Video/image files stay on disk where they are. Git is the only persistence layer.
 - **CLI-first** — no GUI overhead. Resolve plugin scripts serve as in-NLE UI.
 - **Additive integration** — work with existing NLEs (DaVinci Resolve), don't replace them
 - **Every phase is demo-able** — the system is useful at every stage of completion
@@ -56,10 +58,11 @@ Each collaborator works on a branch. Giteo serializes the NLE's timeline state i
 ┌──────────────────────────────────┐
 │  giteo-core (Python)             │
 │                                  │
-│  Serializer:    resolve.py       │
-│  Deserializer:  resolve.py       │
+│  Serializer:    serializer.py     │
+│  Deserializer:  deserializer.py  │
 │  JSON writer:   json_writer.py   │
 │  Git wrapper:   core.py          │
+│  AI merge:      ai_merge.py      │
 │  Diff formatter: differ.py       │
 │  CLI:           cli.py           │
 └──────────┬───────────────────────┘
@@ -92,8 +95,10 @@ If Resolve Free's scripting API proves too limited, pivot to Final Cut Pro X via
 | Version control | System `git` binary | Battle-tested; don't reimplement |
 | Git interaction | `subprocess` | No extra dependencies |
 | Data format | JSON (`indent=2, sort_keys=True`) | Human-readable, git-diffable |
+| AI merge | Claude API (`anthropic` Python SDK) | Semantic conflict resolution |
 | Terminal output | `rich` | Pretty diffs and logs |
 | NLE integration | Resolve Workspace Scripts | Scripts appear in Resolve's menu |
+| Storage | Local filesystem only | No database, no media storage — just JSON in a git repo |
 
 ---
 
@@ -109,6 +114,8 @@ giteo/
 │   ├── serializer.py               # Resolve timeline → domain-split JSON
 │   ├── deserializer.py             # Domain-split JSON → Resolve timeline
 │   ├── json_writer.py              # Write domain-split JSON files
+│   ├── ai_merge.py                 # LLM-powered semantic merge resolution
+│   ├── validator.py                # Post-merge validation (orphaned refs, sync issues)
 │   └── differ.py                   # Human-readable diff formatting
 ├── resolve_plugin/                 # Scripts for Resolve's Scripts menu
 │   ├── giteo_commit.py
@@ -273,18 +280,24 @@ When Editor A changes `cuts.json` on `main` and Colorist B changes `color.json` 
 
 ---
 
-## Git Operations Mapping
+## Giteo Commands
+
+All interaction goes through `giteo`. Users never run raw `git`.
 
 | User action | Giteo command | Under the hood |
 |-------------|---------------|----------------|
-| Save a version | `giteo commit -m "rough cut done"` | Serialize timeline → JSON, `git add`, `git commit` |
+| Start tracking | `giteo init` | Create `.giteo/`, `git init`, initial snapshot |
+| Stage changes | `giteo add` | Serialize timeline → JSON, `git add timeline/ assets/` |
+| Save a version | `giteo commit -m "rough cut done"` | `giteo add` + `git commit` |
 | Try different approach | `giteo branch experiment` | `git checkout -b experiment` |
-| Switch versions | `giteo checkout main` | `git checkout main`, deserialize JSON → NLE timeline |
-| Combine work | `giteo merge color-grade` | `git merge color-grade` |
+| Switch versions | `giteo checkout main` | `git checkout main`, deserialize JSON → Resolve timeline |
+| Combine work | `giteo merge color-grade` | `git merge` → validate → AI resolve if needed |
 | See what changed | `giteo diff` | `git diff` formatted as human-readable timeline changes |
 | View history | `giteo log` | `git log` with giteo formatting |
 | Undo last version | `giteo revert` | `git revert HEAD` |
-| Start tracking | `giteo init` | Create `.giteo/`, `git init`, initial snapshot |
+| Share to remote | `giteo push` | `git push` (standard GitHub remote) |
+| Get remote changes | `giteo pull` | `git pull`, deserialize updated JSON → Resolve timeline |
+| Check state | `giteo status` | `git status` with giteo formatting |
 
 ---
 
@@ -300,7 +313,7 @@ import os
 # Add giteo package to path
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))
 
-from giteo.serializers.resolve import serialize_timeline
+from giteo.serializer import serialize_timeline
 from giteo.core import git_add, git_commit
 
 project = resolve.GetProjectManager().GetCurrentProject()
@@ -314,6 +327,110 @@ git_commit(project_dir, message)
 
 Install scripts by symlinking to:
 `~/Library/Application Support/Blackmagic Design/DaVinci Resolve/Fusion/Scripts/Edit/`
+
+---
+
+## AI-Powered Semantic Merging
+
+Git's text-based merge works well when different people edit different domain files (cuts vs. color). But it breaks down when changes are semantically coupled across files. This is where AI steps in.
+
+### Known Edge Cases Git Can't Handle
+
+| Problem | Example | Why git fails |
+|---------|---------|---------------|
+| Orphaned references | Editor deletes clip `item_003` in `cuts.json`; colorist graded `item_003` in `color.json` | Merge "succeeds" (different files) but color grade points at nothing |
+| Audio/video sync | Editor trims clip in `cuts.json`; sound designer adjusted audio for the old length in `audio.json` | Merge succeeds but audio is out of sync with video |
+| Overlapping clips | Two editors add clips to same track at same timecode | Git may merge both additions into `cuts.json`, producing an invalid timeline |
+| Track count mismatch | One branch adds V3 track, another doesn't | `metadata.json` conflicts, but the structural issue is in `cuts.json` |
+
+### Merge Flow
+
+```
+giteo merge <branch>
+    │
+    ▼
+1. Try git merge
+    │
+    ├─ Git conflict? ──────────────────────┐
+    │                                       │
+    ▼                                       ▼
+2. Git merge succeeded              3. Extract ours/theirs/base
+    │                                  for conflicting files
+    ▼                                       │
+4. Post-merge validation                    │
+   (validator.py)                           │
+    │                                       │
+    ├─ Valid? → Done ✓                      │
+    │                                       │
+    ├─ Issues found? ──────────────────────►│
+    │                                       │
+    ▼                                       ▼
+5. Send to LLM (ai_merge.py)
+   - All domain JSON files (both versions)
+   - Schema context
+   - List of detected issues
+   - Instructions for semantic resolution
+    │
+    ▼
+6. LLM returns resolved JSON
+    │
+    ▼
+7. Show user what AI changed, ask for confirmation
+    │
+    ▼
+8. Write resolved files, commit
+```
+
+### What the LLM Receives
+
+```python
+prompt = f"""
+You are resolving a merge conflict in a video editing timeline.
+
+The timeline is split into domain files: cuts.json, color.json, audio.json, etc.
+Clips are linked across files by their "id" field.
+
+BASE (common ancestor):
+{base_json}
+
+OURS (current branch):
+{ours_json}
+
+THEIRS (incoming branch):
+{theirs_json}
+
+DETECTED ISSUES:
+{validation_issues}
+
+Rules:
+- If a clip was deleted in one branch, remove its references from ALL domain files
+- Audio clip boundaries must match their corresponding video clip boundaries
+- No two clips may overlap on the same track at the same timecode
+- Preserve as much work from both branches as possible
+- When in doubt, prefer the branch that made the more recent commit
+
+Return the resolved JSON for each domain file.
+"""
+```
+
+### Implementation (`ai_merge.py`)
+
+- Uses Claude API via `anthropic` Python SDK
+- Called only when git can't merge cleanly OR post-merge validation finds issues
+- For the common case (different domains, no cross-references), AI is never invoked — git handles it
+- User always sees what the AI changed before it's committed
+- Falls back to manual conflict resolution if AI merge is declined
+
+---
+
+## Storage Model
+
+**No database. No media storage.** The entire system is JSON files in a git repo.
+
+- **Timeline metadata** (`timeline/*.json`): version controlled via git. This is all giteo manages.
+- **Media files** (video, audio, images): stay wherever they are on disk. Never copied, moved, or versioned by giteo. `assets/manifest.json` records their paths and checksums so we know what media the timeline references — but the files themselves are the user's responsibility.
+- **Persistence**: git is the database. Commit history = version history. Branches = parallel workstreams. No Postgres, no SQLite, no Redis.
+- **Sharing**: push/pull to GitHub. Collaborators need the same media files on their machines (e.g., shared drive, Dropbox, NAS), but the giteo repo itself is tiny (just JSON).
 
 ---
 
@@ -358,8 +475,11 @@ Install scripts by symlinking to:
 1. **Serializer tests** — mock Resolve API, verify JSON output matches expected structure
 2. **Git wrapper tests** — init repo, commit, branch, merge in a temp directory
 3. **Merge tests** — two branches editing different domain files merge cleanly; same file produces a conflict
-4. **Diff formatter tests** — verify human-readable output from known JSON diffs
-5. **Roundtrip tests** — serialize → commit → modify → deserialize → verify structure preserved
+4. **Validation tests** — orphaned clip refs, audio/video sync mismatches, overlapping clips are detected
+5. **AI merge tests** — given a known cross-domain conflict, AI produces valid resolved JSON
+6. **Diff formatter tests** — verify human-readable output from known JSON diffs
+7. **Roundtrip tests** — serialize → commit → modify → deserialize → verify structure preserved
+
 Run tests with: `python -m pytest tests/`
 
 ---
@@ -368,19 +488,20 @@ Run tests with: `python -m pytest tests/`
 
 ### In Scope (36-hour MVP)
 - DaVinci Resolve serializer/deserializer (free version, via Scripts menu)
-- Git operations: init, commit, branch, checkout, merge, diff, log, revert
+- Full `giteo` CLI: init, add, commit, branch, checkout, merge, diff, log, revert, push, pull, status
 - Domain-split JSON (cuts, color, audio, effects, markers, metadata)
+- AI-powered semantic merge resolution (Claude API)
+- Post-merge validation (orphaned refs, sync issues, overlapping clips)
 - Human-readable diff output
 - Asset manifest (file paths + checksums, no binary versioning)
-- CLI interface
 - Resolve plugin scripts (5 menu items)
 
 ### Out of Scope
 - Web UI / review interface
-- Remote server / hosted platform (just use GitHub)
-- Proxy generation / media file sync
-- Custom merge engine (git's text merge is sufficient)
-- Conflict resolution GUI
+- Hosted platform (just use GitHub as remote)
+- Database of any kind (git is the persistence layer)
+- Media file storage, sync, or versioning (just track paths in manifest)
+- Conflict resolution GUI (terminal + AI is sufficient)
 - Locking / concurrent edit prevention
 - Real-time collaboration
 - Premiere Pro / Final Cut Pro / Avid support (fallback only if Resolve fails)
