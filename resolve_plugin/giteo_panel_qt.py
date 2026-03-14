@@ -92,6 +92,19 @@ SVG_SPARKLE = """<svg width="16" height="16" viewBox="0 0 16 16" fill="none">
   <path d="M8 1l1.5 4.5L14 7l-4.5 1.5L8 13l-1.5-4.5L2 7l4.5-1.5L8 1z" fill="{color}"/>
 </svg>"""
 
+# Group 2.svg: commit message AI selector (white dots, various opacities)
+SVG_COMMIT_SELECTOR = """<svg width="12" height="12" viewBox="0 0 12 12" fill="none">
+  <path d="M4.65214 1.32895C4.98039 1.89254 4.78559 2.61319 4.21703 2.93858C3.64847 3.26397 2.92146 3.07087 2.5932 2.50728C2.26495 1.94369 2.45975 1.22304 3.02831 0.897651C3.59687 0.572264 4.32388 0.765363 4.65214 1.32895Z" fill="{color}"/>
+  <path d="M9.4072 9.49292C9.73546 10.0565 9.54066 10.7772 8.9721 11.1026C8.40354 11.4279 7.67653 11.2348 7.34827 10.6713C7.02001 10.1077 7.21481 9.38701 7.78337 9.06162C8.35193 8.73624 9.07895 8.92933 9.4072 9.49292Z" fill="{color}" fill-opacity="0.5"/>
+  <path d="M1.28781 7.33624C1.85638 7.01088 2.58339 7.204 2.91162 7.7676C3.23986 8.3312 3.04502 9.05185 2.47645 9.37722C1.90788 9.70258 1.18087 9.50945 0.852639 8.94585C0.524405 8.38225 0.719237 7.6616 1.28781 7.33624Z" fill="{color}" fill-opacity="0.7"/>
+  <path d="M9.52402 2.62307C10.0926 2.29771 10.8196 2.49084 11.1478 3.05444C11.4761 3.61804 11.2812 4.33869 10.7127 4.66405C10.1441 4.98941 9.41708 4.79629 9.08885 4.23269C8.76061 3.66909 8.95544 2.94844 9.52402 2.62307Z" fill="{color}" fill-opacity="0.3"/>
+  <path d="M7.52283 0.304981C8.15697 0.473414 8.5333 1.11954 8.36338 1.74814C8.19347 2.37674 7.54164 2.74977 6.9075 2.58134C6.27335 2.41291 5.89702 1.76679 6.06694 1.13819C6.23686 0.509588 6.88868 0.136549 7.52283 0.304981Z" fill="{color}" fill-opacity="0.2"/>
+  <path d="M5.0929 9.41896C5.72704 9.5874 6.10337 10.2335 5.93345 10.8621C5.76353 11.4907 5.11171 11.8638 4.47757 11.6953C3.84342 11.5269 3.46709 10.8808 3.63701 10.2522C3.80693 9.62357 4.45875 9.25053 5.0929 9.41896Z" fill="{color}" fill-opacity="0.6"/>
+  <path d="M1.76355 3.47423C2.3977 3.64266 2.77403 4.28879 2.60411 4.91739C2.43419 5.54599 1.78237 5.91902 1.14822 5.75059C0.514076 5.58216 0.137746 4.93604 0.307665 4.30744C0.477584 3.67884 1.12941 3.3058 1.76355 3.47423Z" fill="{color}" fill-opacity="0.8"/>
+  <path d="M10.8521 6.24971C11.4862 6.41815 11.8625 7.06427 11.6926 7.69287C11.5227 8.32147 10.8709 8.69451 10.2367 8.52607C9.60258 8.35764 9.22625 7.71152 9.39617 7.08292C9.56608 6.45432 10.2179 6.08128 10.8521 6.24971Z" fill="{color}" fill-opacity="0.4"/>
+  <path d="M7.21342 5.34055C7.54167 5.90413 7.34687 6.62479 6.77831 6.95018C6.20975 7.27556 5.48274 7.08246 5.15448 6.51888C4.82622 5.95529 5.02103 5.23463 5.58959 4.90925C6.15815 4.58386 6.88516 4.77696 7.21342 5.34055Z" fill="{color}"/>
+</svg>"""
+
 # -- Stylesheet ---------------------------------------------------------------
 
 STYLESHEET = f"""
@@ -551,30 +564,35 @@ class ActionsSection(QWidget):
 # -- Change Item Widget -------------------------------------------------------
 
 class ChangeItemWidget(QWidget):
-    """A single change item with icon and name."""
+    """A single change item with icon and name (mockup-aligned)."""
 
     def __init__(self, category: str, name: str, details: str = "", parent=None):
         super().__init__(parent)
         self.category = category
-        
-        layout = QHBoxLayout(self)
-        layout.setSpacing(8)
-        layout.setContentsMargins(8, 4, 8, 4)
 
-        # Icon
+        layout = QHBoxLayout(self)
+        layout.setSpacing(10)
+        layout.setContentsMargins(0, 6, 0, 6)
+
+        # Icon (mockup Group 14: video film strip, audio waveform, color circle)
         icon_label = QLabel()
+        icon_color = ORANGE_DARK
         if category == "audio":
-            icon_label.setPixmap(svg_to_pixmap(SVG_AUDIO, ORANGE_DARK, 16))
+            icon_label.setPixmap(svg_to_pixmap(SVG_AUDIO, icon_color, 16))
         elif category == "video":
-            icon_label.setPixmap(svg_to_pixmap(SVG_VIDEO, ORANGE_DARK, 16))
+            icon_label.setPixmap(svg_to_pixmap(SVG_VIDEO, icon_color, 16))
         elif category == "color":
-            icon_label.setPixmap(svg_to_pixmap(SVG_COLOR, ORANGE_DARK, 16))
+            icon_label.setPixmap(svg_to_pixmap(SVG_COLOR, icon_color, 16))
         icon_label.setFixedSize(16, 16)
+        icon_label.setAlignment(Qt.AlignCenter)
         layout.addWidget(icon_label)
 
-        # Name
+        # Name (mockup: #4A4A4A muted text)
         name_label = QLabel(name)
-        name_label.setStyleSheet(f"color: {TEXT_PRIMARY}; font-size: 12px;")
+        name_label.setStyleSheet(f"""
+            color: {TEXT_DARK};
+            font-size: 12px;
+        """)
         layout.addWidget(name_label)
 
         layout.addStretch()
@@ -583,7 +601,7 @@ class ChangeItemWidget(QWidget):
 # -- Changes Section Widget ---------------------------------------------------
 
 class ChangesSection(QWidget):
-    """The CHANGES section with commit input and file list."""
+    """The CHANGES section with commit input and file list (mockup-aligned)."""
 
     commit_requested = Signal(str)
 
@@ -592,105 +610,104 @@ class ChangesSection(QWidget):
         self._changes = {"audio": [], "video": [], "color": []}
 
         layout = QVBoxLayout(self)
-        layout.setSpacing(8)
+        layout.setSpacing(10)
         layout.setContentsMargins(0, 0, 0, 0)
 
-        # Commit message input row
-        input_row = QHBoxLayout()
-        input_row.setSpacing(8)
-
-        self._message_input = QLineEdit()
-        self._message_input.setPlaceholderText("Commit message...")
-        self._message_input.setStyleSheet(f"""
-            QLineEdit {{
-                background-color: {BG_INPUT};
-                color: {TEXT_PRIMARY};
-                border: 1px solid {BORDER};
-                border-radius: 3px;
-                padding: 8px 12px;
-            }}
-            QLineEdit:focus {{
-                border-color: {ORANGE};
-            }}
-        """)
-        input_row.addWidget(self._message_input, stretch=1)
-
-        # Sparkle button (AI assist placeholder)
-        sparkle_btn = QPushButton()
-        sparkle_btn.setIcon(svg_to_icon(SVG_SPARKLE, TEXT_DARK, 16))
-        sparkle_btn.setFixedSize(36, 36)
-        sparkle_btn.setStyleSheet(f"""
-            QPushButton {{
+        # Input row: grey container, dark right panel extends to border
+        input_frame = QFrame()
+        input_frame.setStyleSheet(f"""
+            QFrame {{
                 background-color: {BG_PANEL};
                 border: 1px solid {BORDER};
                 border-radius: 3px;
             }}
-            QPushButton:hover {{
-                border-color: {ORANGE};
+        """)
+        input_frame.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
+        input_row = QHBoxLayout(input_frame)
+        input_row.setSpacing(10)
+        input_row.setContentsMargins(6, 6, 6, 6)
+
+        self._message_input = QLineEdit()
+        self._message_input.setPlaceholderText("Commit message...")
+        self._message_input.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
+        self._message_input.setStyleSheet(f"""
+            QLineEdit {{
+                background-color: {BG_PANEL};
+                color: {TEXT_PRIMARY};
+                border: none;
+                border-radius: 2px;
+                padding: 6px 8px;
+                font-size: 13px;
+                min-width: 0;
+            }}
+            QLineEdit:focus {{
+                outline: none;
             }}
         """)
-        sparkle_btn.setToolTip("AI-assisted commit message")
-        input_row.addWidget(sparkle_btn)
+        input_row.addWidget(self._message_input, stretch=1)
 
-        layout.addLayout(input_row)
+        # Group 2.svg: no background, hover darkens area around icon
+        selector_btn = QPushButton()
+        selector_btn.setIcon(svg_to_icon(SVG_COMMIT_SELECTOR, TEXT_PRIMARY, 12))
+        selector_btn.setFixedSize(24, 24)
+        selector_btn.setStyleSheet(f"""
+            QPushButton {{
+                background-color: transparent;
+                border: none;
+                padding: 0;
+            }}
+            QPushButton:hover {{
+                background-color: rgba(0, 0, 0, 0.2);
+                border-radius: 4px;
+            }}
+        """)
+        selector_btn.setToolTip("AI-assisted commit message")
+        input_row.addWidget(selector_btn, alignment=Qt.AlignRight | Qt.AlignVCenter)
 
-        # Commit button with dropdown
-        commit_row = QHBoxLayout()
-        commit_row.setSpacing(0)
+        layout.addWidget(input_frame)
 
+        # Commit button: full-width orange (#FFB463), 5px radius
         self._commit_btn = QPushButton("Commit")
         self._commit_btn.setObjectName("primaryBtn")
         self._commit_btn.clicked.connect(self._on_commit)
+        self._commit_btn.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
         self._commit_btn.setStyleSheet(f"""
             QPushButton#primaryBtn {{
                 background-color: {ORANGE};
                 color: {TEXT_BLACK};
                 border: none;
-                border-radius: 5px 0 0 5px;
-                padding: 10px 24px;
+                border-radius: 5px;
+                padding: 10px 16px;
                 font-weight: 600;
+                font-size: 13px;
             }}
             QPushButton#primaryBtn:hover {{
                 background-color: {ORANGE_HOVER};
             }}
-        """)
-        commit_row.addWidget(self._commit_btn, stretch=1)
-
-        dropdown_btn = QPushButton("▼")
-        dropdown_btn.setFixedWidth(36)
-        dropdown_btn.setStyleSheet(f"""
-            QPushButton {{
-                background-color: {ORANGE};
-                color: {TEXT_BLACK};
-                border: none;
-                border-left: 1px solid rgba(0,0,0,0.15);
-                border-radius: 0 5px 5px 0;
-                padding: 10px 8px;
-                font-size: 10px;
-            }}
-            QPushButton:hover {{
-                background-color: {ORANGE_HOVER};
+            QPushButton#primaryBtn:pressed {{
+                background-color: {ORANGE_PRESSED};
             }}
         """)
-        commit_row.addWidget(dropdown_btn)
+        layout.addWidget(self._commit_btn)
 
-        layout.addLayout(commit_row)
-
-        # Changes sub-header
-        changes_header = QLabel("Changes")
-        changes_header.setStyleSheet(f"""
-            color: {TEXT_PRIMARY};
+        # Changes sub-header: indented from input/commit
+        self._changes_header = QLabel("Changes")
+        self._changes_header.setAlignment(Qt.AlignLeft | Qt.AlignVCenter)
+        self._changes_header.setStyleSheet(f"""
+            color: {TEXT_DARK};
             font-size: 11px;
             font-weight: 500;
-            padding-top: 8px;
+            padding-top: 12px;
+            padding-bottom: 4px;
+            padding-left: 12px;
         """)
-        layout.addWidget(changes_header)
+        layout.addWidget(self._changes_header)
 
-        # Changes list container
+        # Changes list container: indented to match header
         self._changes_container = QWidget()
         self._changes_layout = QVBoxLayout(self._changes_container)
-        self._changes_layout.setSpacing(2)
-        self._changes_layout.setContentsMargins(0, 0, 0, 0)
+        self._changes_layout.setSpacing(4)
+        self._changes_layout.setContentsMargins(12, 0, 0, 0)
         layout.addWidget(self._changes_container)
 
         layout.addStretch()
@@ -705,6 +722,10 @@ class ChangesSection(QWidget):
     def set_changes(self, changes: dict):
         """Update the displayed changes."""
         self._changes = changes
+        has_changes = any(changes.values())
+
+        # Update header (mockup: "No changes" when empty, "Changes" when populated)
+        self._changes_header.setText("No changes" if not has_changes else "Changes")
 
         # Clear existing items
         while self._changes_layout.count():
@@ -712,18 +733,14 @@ class ChangesSection(QWidget):
             if child.widget():
                 child.widget().deleteLater()
 
-        # Add new items by category
-        for category in ["video", "audio", "color"]:
-            items = changes.get(category, [])
-            for item in items:
-                name = item.get("name", item.get("id", "Unknown"))
-                widget = ChangeItemWidget(category, name)
-                self._changes_layout.addWidget(widget)
-
-        if not any(changes.values()):
-            no_changes = QLabel("No changes")
-            no_changes.setStyleSheet(f"color: {TEXT_DARK}; font-size: 12px; padding: 8px;")
-            self._changes_layout.addWidget(no_changes)
+        if has_changes:
+            # Add items by category (video, audio, color) — mockup order
+            for category in ["video", "audio", "color"]:
+                items = changes.get(category, [])
+                for item in items:
+                    name = item.get("name", item.get("id", "Unknown"))
+                    widget = ChangeItemWidget(category, name)
+                    self._changes_layout.addWidget(widget)
 
     def get_message(self) -> str:
         return self._message_input.text().strip()
@@ -904,6 +921,7 @@ class CommitGraphSection(QWidget):
         scroll = QScrollArea()
         scroll.setWidgetResizable(True)
         scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
+        scroll.setVerticalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
         scroll.setStyleSheet("QScrollArea { border: none; background: transparent; }")
 
         self._commits_container = QWidget()
@@ -1041,6 +1059,7 @@ class GiteoPanel(QMainWindow):
         scroll = QScrollArea()
         scroll.setWidgetResizable(True)
         scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
+        scroll.setVerticalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
         scroll.setStyleSheet("QScrollArea { border: none; background: transparent; }")
 
         sections_widget = QWidget()
