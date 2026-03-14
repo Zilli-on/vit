@@ -8,32 +8,12 @@ Usage: python giteo_panel_qt.py --project-dir /path/to/project --port 12345
 """
 import argparse
 import json
-import os
 import socket
 import sys
 import threading
-import traceback
-from functools import partial
-
-# -- Debug logging (survives crash, goes to ~/.giteo/panel_debug.log)
-_DEBUG_LOG_PATH = os.path.expanduser("~/.giteo/panel_debug.log")
-_DEBUG_ENABLED = True  # Set to False to disable; enable for debugging crashes
-
-
-def _debug(msg: str):
-    if _DEBUG_ENABLED:
-        try:
-            os.makedirs(os.path.dirname(_DEBUG_LOG_PATH), exist_ok=True)
-            with open(_DEBUG_LOG_PATH, "a", encoding="utf-8") as f:
-                f.write(f"[giteo-qt] {msg}\n")
-                f.flush()
-        except Exception:
-            pass
-        print(f"[giteo-qt] {msg}", flush=True)
 
 from PySide6.QtCore import (
-    Qt, Signal, QObject, QThread, Slot, QPropertyAnimation, 
-    QRect, QEasingCurve, QTimer, QSize, QByteArray
+    Qt, Signal, QPropertyAnimation, QRect, QEasingCurve, QTimer, QSize, QByteArray
 )
 from PySide6.QtGui import (
     QFont, QColor, QPalette, QIcon, QGuiApplication, QPainter,
@@ -331,27 +311,6 @@ class IPCClient:
             pass
 
 
-# -- Async Worker -------------------------------------------------------------
-
-class Worker(QObject):
-    """Run IPC requests off the main thread."""
-    finished = Signal(dict)
-    error = Signal(str)
-
-    def __init__(self, ipc, request):
-        super().__init__()
-        self.ipc = ipc
-        self.request = request
-
-    @Slot()
-    def run(self):
-        try:
-            result = self.ipc.send(self.request)
-            self.finished.emit(result)
-        except Exception as e:
-            self.error.emit(str(e))
-
-
 # -- Dialogs ------------------------------------------------------------------
 
 class InputDialog(QDialog):
@@ -565,20 +524,17 @@ class ActionsSection(QWidget):
         layout.addLayout(btn_row)
 
     def _on_new_branch_click(self):
-        _debug("ActionsSection._on_new_branch_click")
         name = self._new_input.text().strip()
         if name:
             self.new_branch_requested.emit(name)
             self._new_input.clear()
 
     def _on_switch_click(self):
-        _debug("ActionsSection._on_switch_click")
         target = self._switch_combo.currentText()
         if target:
             self.switch_branch_requested.emit(target)
 
     def _on_merge_click(self):
-        _debug("ActionsSection._on_merge_click")
         target = self._merge_combo.currentText()
         if target:
             self.merge_branch_requested.emit(target)
@@ -1187,16 +1143,12 @@ class GiteoPanel(QMainWindow):
 
     def _run_async(self, request, callback):
         """Run IPC request. Uses QTimer to defer to event loop (avoids QThread crash on macOS)."""
-        _debug(f"_run_async action={request.get('action', '?')}")
 
         def do_request():
-            _debug(f"do_request starting for {request.get('action', '?')}")
             try:
                 result = self.ipc.send(request)
-                _debug(f"do_request got result ok={result.get('ok')}")
                 callback(result)
             except Exception as e:
-                _debug(f"do_request EXCEPTION: {e}\n{traceback.format_exc()}")
                 self._append_log(f"Error: {e}")
 
         QTimer.singleShot(0, do_request)
@@ -1207,8 +1159,8 @@ class GiteoPanel(QMainWindow):
             sb = self._log_text.verticalScrollBar()
             if sb:
                 sb.setValue(sb.maximum())
-        except Exception as e:
-            _debug(f"_append_log EXCEPTION: {e}")
+        except Exception:
+            pass
 
     def refresh_branch(self):
         self._run_async({"action": "get_branch"}, self._on_branch_result)
@@ -1255,7 +1207,6 @@ class GiteoPanel(QMainWindow):
 
     def on_save(self, message: str):
         """Handle commit request from Changes section."""
-        _debug(f"on_save(message={repr(message)})")
         if not message:
             message = "save version"
         self._run_async({"action": "save", "message": message}, self._on_save_result)
@@ -1271,15 +1222,11 @@ class GiteoPanel(QMainWindow):
 
     def on_new_branch(self, name: str):
         """Called with inline input value (no dialog)."""
-        _debug(f"on_new_branch(name={repr(name)})")
         if not name or not name.strip():
             return
         name = name.strip()
-        _debug("on_new_branch: about to _append_log")
         self._append_log(f"Creating branch '{name}'...")
-        _debug("on_new_branch: about to _run_async")
         self._run_async({"action": "new_branch", "name": name}, self._on_new_branch_result)
-        _debug("on_new_branch: _run_async called")
 
     def _on_new_branch_result(self, result):
         if result.get("ok"):
@@ -1291,7 +1238,6 @@ class GiteoPanel(QMainWindow):
 
     def on_switch_branch(self, target: str):
         """Called with combo selection (no dialog)."""
-        _debug(f"on_switch_branch(target={repr(target)})")
         if not target:
             return
         self._append_log(f"Switching to '{target}'...")
@@ -1308,7 +1254,6 @@ class GiteoPanel(QMainWindow):
 
     def on_merge_branch(self, target: str):
         """Called with combo selection (no dialog)."""
-        _debug(f"on_merge_branch(target={repr(target)})")
         if not target:
             return
         current = self.branch_label.text().replace("BRANCH: ", "").strip()
@@ -1402,23 +1347,17 @@ class GiteoPanel(QMainWindow):
 # -- Entry Point --------------------------------------------------------------
 
 def main():
-    _debug("main() starting")
     parser = argparse.ArgumentParser(description="Giteo PySide6 Panel (VIT)")
     parser.add_argument("--project-dir", required=True)
     parser.add_argument("--port", type=int, required=True)
     args = parser.parse_args()
-    _debug(f"project_dir={args.project_dir} port={args.port}")
 
     app = QApplication(sys.argv)
     app.setApplicationName("vit")
-    _debug("QApplication created")
 
     ipc = IPCClient(args.port)
-    _debug("IPCClient connected")
     window = GiteoPanel(ipc, args.project_dir)
-    _debug("GiteoPanel created")
     window.show()
-    _debug("window.show() done, entering event loop")
 
     sys.exit(app.exec())
 
