@@ -1,4 +1,4 @@
-"""Giteo Panel — PySide6 UI subprocess.
+"""Giteo Panel — PySide6 UI subprocess (VIT Design).
 
 This runs as a standalone process spawned by giteo_panel_launcher.py.
 Communicates with the launcher via a JSON-over-TCP socket for operations
@@ -13,28 +13,88 @@ import sys
 import threading
 from functools import partial
 
-from PySide6.QtCore import Qt, Signal, QObject, QThread, Slot, QPropertyAnimation, QRect, QEasingCurve
-from PySide6.QtGui import QFont, QColor, QPalette, QIcon, QGuiApplication
+from PySide6.QtCore import (
+    Qt, Signal, QObject, QThread, Slot, QPropertyAnimation, 
+    QRect, QEasingCurve, QTimer, QSize, QByteArray
+)
+from PySide6.QtGui import (
+    QFont, QColor, QPalette, QIcon, QGuiApplication, QPainter,
+    QPixmap, QPen, QBrush, QPainterPath
+)
 from PySide6.QtWidgets import (
     QApplication, QMainWindow, QWidget, QVBoxLayout, QHBoxLayout,
     QPushButton, QLabel, QTextEdit, QLineEdit, QDialog, QDialogButtonBox,
     QListWidget, QListWidgetItem, QFrame, QSizePolicy, QSpacerItem,
+    QScrollArea, QComboBox, QGridLayout,
 )
+from PySide6.QtSvg import QSvgRenderer
 
-# -- Colors / Theme ----------------------------------------------------------
+# -- Colors / Theme (from SVG mockup) -----------------------------------------
 
-ORANGE = "#E8772E"
-ORANGE_HOVER = "#F09040"
-ORANGE_PRESSED = "#C46020"
-BG_DARK = "#1E1E1E"
-BG_PANEL = "#252526"
-BG_INPUT = "#2D2D30"
-TEXT_PRIMARY = "#CCCCCC"
-TEXT_SECONDARY = "#808080"
+ORANGE = "#FFB463"           # Buttons, accent
+ORANGE_LIGHT = "#FFD2A1"     # Panels, backgrounds
+ORANGE_DARK = "#E07603"      # Graph lines, icons
+ORANGE_HOVER = "#FFCA8A"
+ORANGE_PRESSED = "#E89F4A"
+
+BG_DARK = "#1C1C1C"          # Main background
+BG_PANEL = "#2C2C2C"         # Input fields
+BG_INPUT = "#1C1C1C"         # Input background
+BORDER = "#464646"           # Borders
+
+TEXT_PRIMARY = "#D9D9D9"     # Primary text
+TEXT_DARK = "#4A4A4A"        # Secondary/muted
+TEXT_BLACK = "#000000"       # On orange buttons
 TEXT_BRIGHT = "#FFFFFF"
-BORDER = "#3E3E42"
+
 SUCCESS = "#4EC9B0"
 ERROR = "#F44747"
+
+# -- SVG Icons ----------------------------------------------------------------
+
+SVG_LOGO = """<svg width="24" height="24" viewBox="0 0 24 24" fill="none">
+  <circle cx="12" cy="12" r="10" stroke="{color}" stroke-width="2" fill="none"/>
+  <circle cx="8" cy="8" r="1.5" fill="{color}"/>
+  <circle cx="16" cy="8" r="1.5" fill="{color}" fill-opacity="0.5"/>
+  <circle cx="8" cy="16" r="1.5" fill="{color}" fill-opacity="0.7"/>
+  <circle cx="16" cy="16" r="1.5" fill="{color}" fill-opacity="0.3"/>
+  <circle cx="12" cy="12" r="1.5" fill="{color}"/>
+</svg>"""
+
+SVG_AUDIO = """<svg width="16" height="16" viewBox="0 0 16 16" fill="none">
+  <path d="M3 5h2l3-3v12l-3-3H3a1 1 0 01-1-1V6a1 1 0 011-1z" fill="{color}"/>
+  <path d="M11 4.5c1.5 1 2 2.5 2 3.5s-.5 2.5-2 3.5" stroke="{color}" stroke-width="1.5" stroke-linecap="round" fill="none"/>
+  <path d="M11 7c.5.3.8.7.8 1s-.3.7-.8 1" stroke="{color}" stroke-width="1.5" stroke-linecap="round" fill="none"/>
+</svg>"""
+
+SVG_VIDEO = """<svg width="16" height="16" viewBox="0 0 16 16" fill="none">
+  <rect x="1" y="3" width="10" height="10" rx="1" stroke="{color}" stroke-width="1.5" fill="none"/>
+  <path d="M11 6l4-2v8l-4-2V6z" fill="{color}"/>
+</svg>"""
+
+SVG_COLOR = """<svg width="16" height="16" viewBox="0 0 16 16" fill="none">
+  <circle cx="8" cy="8" r="6" stroke="{color}" stroke-width="1.5" fill="none"/>
+  <circle cx="8" cy="8" r="4" fill="{color}" fill-opacity="0.3"/>
+  <circle cx="8" cy="8" r="2" fill="{color}"/>
+</svg>"""
+
+SVG_CHEVRON_DOWN = """<svg width="12" height="12" viewBox="0 0 12 12" fill="none">
+  <path d="M3 4.5L6 7.5L9 4.5" stroke="{color}" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+</svg>"""
+
+SVG_CHEVRON_RIGHT = """<svg width="12" height="12" viewBox="0 0 12 12" fill="none">
+  <path d="M4.5 3L7.5 6L4.5 9" stroke="{color}" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+</svg>"""
+
+SVG_CHEVRON_LEFT = """<svg width="12" height="12" viewBox="0 0 12 12" fill="none">
+  <path d="M7.5 3L4.5 6L7.5 9" stroke="{color}" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+</svg>"""
+
+SVG_SPARKLE = """<svg width="16" height="16" viewBox="0 0 16 16" fill="none">
+  <path d="M8 1l1.5 4.5L14 7l-4.5 1.5L8 13l-1.5-4.5L2 7l4.5-1.5L8 1z" fill="{color}"/>
+</svg>"""
+
+# -- Stylesheet ---------------------------------------------------------------
 
 STYLESHEET = f"""
 QMainWindow {{
@@ -43,25 +103,31 @@ QMainWindow {{
 QWidget {{
     background-color: {BG_DARK};
     color: {TEXT_PRIMARY};
-    font-family: "SF Mono", "Menlo", "Consolas", monospace;
+    font-family: "SF Pro Display", "Segoe UI", "Helvetica Neue", sans-serif;
     font-size: 13px;
+}}
+QLabel#titleLabel {{
+    color: {TEXT_PRIMARY};
+    font-size: 16px;
+    font-weight: 600;
 }}
 QLabel#branchLabel {{
     color: {ORANGE};
-    font-size: 15px;
-    font-weight: bold;
-    padding: 8px 0;
+    font-size: 13px;
+    font-weight: 600;
 }}
-QLabel#titleLabel {{
-    color: {TEXT_BRIGHT};
-    font-size: 18px;
-    font-weight: bold;
+QLabel#sectionHeader {{
+    color: {TEXT_PRIMARY};
+    font-size: 12px;
+    font-weight: 500;
+    text-transform: uppercase;
+    letter-spacing: 1px;
 }}
 QPushButton {{
-    background-color: {BG_INPUT};
+    background-color: {BG_PANEL};
     color: {TEXT_PRIMARY};
     border: 1px solid {BORDER};
-    border-radius: 4px;
+    border-radius: 5px;
     padding: 8px 16px;
     font-size: 13px;
     min-height: 20px;
@@ -75,9 +141,10 @@ QPushButton:pressed {{
 }}
 QPushButton#primaryBtn {{
     background-color: {ORANGE};
-    color: {TEXT_BRIGHT};
+    color: {TEXT_BLACK};
     border: none;
-    font-weight: bold;
+    font-weight: 600;
+    border-radius: 5px;
 }}
 QPushButton#primaryBtn:hover {{
     background-color: {ORANGE_HOVER};
@@ -85,32 +152,92 @@ QPushButton#primaryBtn:hover {{
 QPushButton#primaryBtn:pressed {{
     background-color: {ORANGE_PRESSED};
 }}
-QTextEdit {{
-    background-color: {BG_PANEL};
-    color: {TEXT_PRIMARY};
-    border: 1px solid {BORDER};
-    border-radius: 4px;
-    padding: 8px;
-    font-size: 12px;
-    selection-background-color: {ORANGE};
+QPushButton#sectionToggle {{
+    background-color: transparent;
+    border: none;
+    padding: 4px 8px;
+    text-align: left;
+}}
+QPushButton#sectionToggle:hover {{
+    background-color: rgba(255, 180, 99, 0.1);
 }}
 QLineEdit {{
     background-color: {BG_INPUT};
     color: {TEXT_PRIMARY};
     border: 1px solid {BORDER};
-    border-radius: 4px;
-    padding: 6px 10px;
+    border-radius: 5px;
+    padding: 8px 12px;
     font-size: 13px;
     selection-background-color: {ORANGE};
 }}
 QLineEdit:focus {{
     border-color: {ORANGE};
 }}
+QComboBox {{
+    background-color: {ORANGE};
+    color: {TEXT_BLACK};
+    border: none;
+    border-radius: 20px;
+    padding: 6px 16px;
+    font-size: 12px;
+    font-weight: 600;
+    min-width: 100px;
+}}
+QComboBox::drop-down {{
+    border: none;
+    width: 20px;
+}}
+QComboBox::down-arrow {{
+    image: none;
+    border-left: 1px solid rgba(0,0,0,0.2);
+    width: 20px;
+}}
+QComboBox QAbstractItemView {{
+    background-color: {BG_PANEL};
+    color: {TEXT_PRIMARY};
+    border: 1px solid {BORDER};
+    selection-background-color: {ORANGE};
+    selection-color: {TEXT_BLACK};
+}}
+QScrollArea {{
+    background-color: transparent;
+    border: none;
+}}
+QScrollBar:vertical {{
+    background-color: {BG_DARK};
+    width: 8px;
+    border-radius: 4px;
+}}
+QScrollBar::handle:vertical {{
+    background-color: {BORDER};
+    border-radius: 4px;
+    min-height: 20px;
+}}
+QScrollBar::handle:vertical:hover {{
+    background-color: {TEXT_DARK};
+}}
+QScrollBar::add-line:vertical, QScrollBar::sub-line:vertical {{
+    height: 0px;
+}}
+QFrame#separator {{
+    background-color: {BORDER};
+    max-height: 1px;
+}}
+QFrame#changePanel {{
+    background-color: {ORANGE_LIGHT};
+    border-radius: 5px;
+}}
+QDialog {{
+    background-color: {BG_DARK};
+}}
+QDialogButtonBox QPushButton {{
+    min-width: 80px;
+}}
 QListWidget {{
     background-color: {BG_PANEL};
     color: {TEXT_PRIMARY};
     border: 1px solid {BORDER};
-    border-radius: 4px;
+    border-radius: 5px;
     padding: 4px;
     font-size: 13px;
     outline: none;
@@ -121,22 +248,31 @@ QListWidget::item {{
 }}
 QListWidget::item:selected {{
     background-color: {ORANGE};
-    color: {TEXT_BRIGHT};
+    color: {TEXT_BLACK};
 }}
 QListWidget::item:hover {{
     background-color: #3E3E42;
 }}
-QDialog {{
-    background-color: {BG_DARK};
-}}
-QDialogButtonBox QPushButton {{
-    min-width: 80px;
-}}
-QFrame#separator {{
-    background-color: {BORDER};
-    max-height: 1px;
-}}
 """
+
+
+# -- Utility Functions --------------------------------------------------------
+
+def svg_to_pixmap(svg_str: str, color: str, size: int = 16) -> QPixmap:
+    """Convert SVG string to QPixmap with specified color."""
+    svg_data = svg_str.format(color=color).encode('utf-8')
+    renderer = QSvgRenderer(QByteArray(svg_data))
+    pixmap = QPixmap(size, size)
+    pixmap.fill(Qt.transparent)
+    painter = QPainter(pixmap)
+    renderer.render(painter)
+    painter.end()
+    return pixmap
+
+
+def svg_to_icon(svg_str: str, color: str, size: int = 16) -> QIcon:
+    """Convert SVG string to QIcon with specified color."""
+    return QIcon(svg_to_pixmap(svg_str, color, size))
 
 
 # -- IPC Client ---------------------------------------------------------------
@@ -155,7 +291,6 @@ class IPCClient:
         with self._lock:
             data = json.dumps(request) + "\n"
             self.sock.sendall(data.encode("utf-8"))
-            # Read response
             while True:
                 while b"\n" in self._buf:
                     line, self._buf = self._buf.split(b"\n", 1)
@@ -195,7 +330,7 @@ class Worker(QObject):
         try:
             result = self.ipc.send(self.request)
             self.finished.emit(result)
-        except BaseException as e:
+        except Exception as e:
             self.error.emit(str(e))
 
 
@@ -269,12 +404,484 @@ class ChoiceDialog(QDialog):
         return item.text() if item else None
 
 
+# -- Collapsible Section Widget -----------------------------------------------
+
+class CollapsibleSection(QWidget):
+    """A collapsible section with header and content area."""
+
+    def __init__(self, title: str, parent=None):
+        super().__init__(parent)
+        self._expanded = True
+        self._title = title
+
+        layout = QVBoxLayout(self)
+        layout.setSpacing(0)
+        layout.setContentsMargins(0, 0, 0, 0)
+
+        # Header button
+        self._header = QPushButton()
+        self._header.setObjectName("sectionToggle")
+        self._header.setCursor(Qt.PointingHandCursor)
+        self._header.clicked.connect(self.toggle)
+        self._update_header()
+        layout.addWidget(self._header)
+
+        # Content container
+        self._content = QWidget()
+        self._content_layout = QVBoxLayout(self._content)
+        self._content_layout.setSpacing(8)
+        self._content_layout.setContentsMargins(0, 8, 0, 8)
+        layout.addWidget(self._content)
+
+    def _update_header(self):
+        """Update header text and icon."""
+        chevron = "▼" if self._expanded else "▶"
+        self._header.setText(f"  {chevron}  {self._title}")
+        self._header.setStyleSheet(f"""
+            QPushButton#sectionToggle {{
+                background-color: transparent;
+                border: none;
+                padding: 8px 4px;
+                text-align: left;
+                color: {TEXT_PRIMARY};
+                font-size: 12px;
+                font-weight: 500;
+                letter-spacing: 1px;
+            }}
+            QPushButton#sectionToggle:hover {{
+                background-color: rgba(255, 180, 99, 0.1);
+            }}
+        """)
+
+    def toggle(self):
+        """Toggle expanded/collapsed state."""
+        self._expanded = not self._expanded
+        self._content.setVisible(self._expanded)
+        self._update_header()
+
+    def set_expanded(self, expanded: bool):
+        """Set expanded state."""
+        self._expanded = expanded
+        self._content.setVisible(expanded)
+        self._update_header()
+
+    def content_layout(self) -> QVBoxLayout:
+        """Return the content layout for adding widgets."""
+        return self._content_layout
+
+    def add_widget(self, widget: QWidget):
+        """Add a widget to the content area."""
+        self._content_layout.addWidget(widget)
+
+    def add_layout(self, layout):
+        """Add a layout to the content area."""
+        self._content_layout.addLayout(layout)
+
+
+# -- Change Item Widget -------------------------------------------------------
+
+class ChangeItemWidget(QWidget):
+    """A single change item with icon and name."""
+
+    def __init__(self, category: str, name: str, details: str = "", parent=None):
+        super().__init__(parent)
+        self.category = category
+        
+        layout = QHBoxLayout(self)
+        layout.setSpacing(8)
+        layout.setContentsMargins(8, 4, 8, 4)
+
+        # Icon
+        icon_label = QLabel()
+        if category == "audio":
+            icon_label.setPixmap(svg_to_pixmap(SVG_AUDIO, ORANGE_DARK, 16))
+        elif category == "video":
+            icon_label.setPixmap(svg_to_pixmap(SVG_VIDEO, ORANGE_DARK, 16))
+        elif category == "color":
+            icon_label.setPixmap(svg_to_pixmap(SVG_COLOR, ORANGE_DARK, 16))
+        icon_label.setFixedSize(16, 16)
+        layout.addWidget(icon_label)
+
+        # Name
+        name_label = QLabel(name)
+        name_label.setStyleSheet(f"color: {TEXT_PRIMARY}; font-size: 12px;")
+        layout.addWidget(name_label)
+
+        layout.addStretch()
+
+
+# -- Changes Section Widget ---------------------------------------------------
+
+class ChangesSection(QWidget):
+    """The CHANGES section with commit input and file list."""
+
+    commit_requested = Signal(str)
+
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self._changes = {"audio": [], "video": [], "color": []}
+
+        layout = QVBoxLayout(self)
+        layout.setSpacing(8)
+        layout.setContentsMargins(0, 0, 0, 0)
+
+        # Commit message input row
+        input_row = QHBoxLayout()
+        input_row.setSpacing(8)
+
+        self._message_input = QLineEdit()
+        self._message_input.setPlaceholderText("Commit message...")
+        self._message_input.setStyleSheet(f"""
+            QLineEdit {{
+                background-color: {BG_INPUT};
+                color: {TEXT_PRIMARY};
+                border: 1px solid {BORDER};
+                border-radius: 3px;
+                padding: 8px 12px;
+            }}
+            QLineEdit:focus {{
+                border-color: {ORANGE};
+            }}
+        """)
+        input_row.addWidget(self._message_input, stretch=1)
+
+        # Sparkle button (AI assist placeholder)
+        sparkle_btn = QPushButton()
+        sparkle_btn.setIcon(svg_to_icon(SVG_SPARKLE, TEXT_DARK, 16))
+        sparkle_btn.setFixedSize(36, 36)
+        sparkle_btn.setStyleSheet(f"""
+            QPushButton {{
+                background-color: {BG_PANEL};
+                border: 1px solid {BORDER};
+                border-radius: 3px;
+            }}
+            QPushButton:hover {{
+                border-color: {ORANGE};
+            }}
+        """)
+        sparkle_btn.setToolTip("AI-assisted commit message")
+        input_row.addWidget(sparkle_btn)
+
+        layout.addLayout(input_row)
+
+        # Commit button with dropdown
+        commit_row = QHBoxLayout()
+        commit_row.setSpacing(0)
+
+        self._commit_btn = QPushButton("Commit")
+        self._commit_btn.setObjectName("primaryBtn")
+        self._commit_btn.clicked.connect(self._on_commit)
+        self._commit_btn.setStyleSheet(f"""
+            QPushButton#primaryBtn {{
+                background-color: {ORANGE};
+                color: {TEXT_BLACK};
+                border: none;
+                border-radius: 5px 0 0 5px;
+                padding: 10px 24px;
+                font-weight: 600;
+            }}
+            QPushButton#primaryBtn:hover {{
+                background-color: {ORANGE_HOVER};
+            }}
+        """)
+        commit_row.addWidget(self._commit_btn, stretch=1)
+
+        dropdown_btn = QPushButton("▼")
+        dropdown_btn.setFixedWidth(36)
+        dropdown_btn.setStyleSheet(f"""
+            QPushButton {{
+                background-color: {ORANGE};
+                color: {TEXT_BLACK};
+                border: none;
+                border-left: 1px solid rgba(0,0,0,0.15);
+                border-radius: 0 5px 5px 0;
+                padding: 10px 8px;
+                font-size: 10px;
+            }}
+            QPushButton:hover {{
+                background-color: {ORANGE_HOVER};
+            }}
+        """)
+        commit_row.addWidget(dropdown_btn)
+
+        layout.addLayout(commit_row)
+
+        # Changes sub-header
+        changes_header = QLabel("Changes")
+        changes_header.setStyleSheet(f"""
+            color: {TEXT_PRIMARY};
+            font-size: 11px;
+            font-weight: 500;
+            padding-top: 8px;
+        """)
+        layout.addWidget(changes_header)
+
+        # Changes list container
+        self._changes_container = QWidget()
+        self._changes_layout = QVBoxLayout(self._changes_container)
+        self._changes_layout.setSpacing(2)
+        self._changes_layout.setContentsMargins(0, 0, 0, 0)
+        layout.addWidget(self._changes_container)
+
+        layout.addStretch()
+
+    def _on_commit(self):
+        msg = self._message_input.text().strip()
+        if not msg:
+            msg = "save version"
+        self.commit_requested.emit(msg)
+        self._message_input.clear()
+
+    def set_changes(self, changes: dict):
+        """Update the displayed changes."""
+        self._changes = changes
+
+        # Clear existing items
+        while self._changes_layout.count():
+            child = self._changes_layout.takeAt(0)
+            if child.widget():
+                child.widget().deleteLater()
+
+        # Add new items by category
+        for category in ["video", "audio", "color"]:
+            items = changes.get(category, [])
+            for item in items:
+                name = item.get("name", item.get("id", "Unknown"))
+                widget = ChangeItemWidget(category, name)
+                self._changes_layout.addWidget(widget)
+
+        if not any(changes.values()):
+            no_changes = QLabel("No changes")
+            no_changes.setStyleSheet(f"color: {TEXT_DARK}; font-size: 12px; padding: 8px;")
+            self._changes_layout.addWidget(no_changes)
+
+    def get_message(self) -> str:
+        return self._message_input.text().strip()
+
+
+# -- Merge Feedback Section Widget --------------------------------------------
+
+class MergeFeedbackSection(QWidget):
+    """The MERGE FEEDBACK section with two branch panels."""
+
+    merge_requested = Signal(str, str)  # branch_a, branch_b
+
+    def __init__(self, parent=None):
+        super().__init__(parent)
+
+        layout = QVBoxLayout(self)
+        layout.setSpacing(12)
+        layout.setContentsMargins(0, 0, 0, 0)
+
+        # Two-panel grid
+        panels_layout = QHBoxLayout()
+        panels_layout.setSpacing(8)
+
+        # Left panel (branch one)
+        self._left_panel = self._create_branch_panel("branch-one")
+        panels_layout.addWidget(self._left_panel)
+
+        # Right panel (branch two)
+        self._right_panel = self._create_branch_panel("branch-two")
+        panels_layout.addWidget(self._right_panel)
+
+        layout.addLayout(panels_layout)
+
+    def _create_branch_panel(self, default_name: str) -> QWidget:
+        """Create a branch comparison panel."""
+        panel = QFrame()
+        panel.setObjectName("changePanel")
+        panel.setStyleSheet(f"""
+            QFrame#changePanel {{
+                background-color: {ORANGE_LIGHT};
+                border-radius: 5px;
+                padding: 8px;
+            }}
+        """)
+
+        panel_layout = QVBoxLayout(panel)
+        panel_layout.setSpacing(8)
+        panel_layout.setContentsMargins(8, 8, 8, 8)
+
+        # Branch selector
+        branch_combo = QComboBox()
+        branch_combo.addItem(default_name)
+        branch_combo.setStyleSheet(f"""
+            QComboBox {{
+                background-color: {ORANGE};
+                color: {TEXT_BLACK};
+                border: none;
+                border-radius: 15px;
+                padding: 6px 16px;
+                font-size: 12px;
+                font-weight: 600;
+            }}
+        """)
+        panel_layout.addWidget(branch_combo)
+
+        # Summary area (placeholder)
+        summary = QFrame()
+        summary.setMinimumHeight(100)
+        summary.setStyleSheet(f"""
+            QFrame {{
+                background-color: {ORANGE_LIGHT};
+                border: none;
+                border-radius: 3px;
+            }}
+        """)
+        panel_layout.addWidget(summary)
+
+        return panel
+
+    def set_branches(self, branches: list):
+        """Update available branches in both dropdowns."""
+        for panel in [self._left_panel, self._right_panel]:
+            combo = panel.findChild(QComboBox)
+            if combo:
+                current = combo.currentText()
+                combo.clear()
+                combo.addItems(branches)
+                if current in branches:
+                    combo.setCurrentText(current)
+
+
+# -- Commit Graph Section Widget ----------------------------------------------
+
+class CommitNode(QWidget):
+    """A single commit node in the graph."""
+
+    def __init__(self, commit: dict, parent=None):
+        super().__init__(parent)
+        self.commit = commit
+
+        layout = QHBoxLayout(self)
+        layout.setSpacing(12)
+        layout.setContentsMargins(0, 4, 0, 4)
+
+        # Timeline line and node
+        node_widget = QWidget()
+        node_widget.setFixedWidth(32)
+        node_layout = QVBoxLayout(node_widget)
+        node_layout.setSpacing(0)
+        node_layout.setContentsMargins(0, 0, 0, 0)
+
+        # Node circle with category icon
+        category = commit.get("category", "video")
+        node_label = QLabel()
+        node_label.setFixedSize(24, 24)
+        node_label.setAlignment(Qt.AlignCenter)
+        
+        if category == "audio":
+            node_label.setPixmap(svg_to_pixmap(SVG_AUDIO, ORANGE_DARK, 16))
+        elif category == "video":
+            node_label.setPixmap(svg_to_pixmap(SVG_VIDEO, ORANGE_DARK, 16))
+        elif category == "color":
+            node_label.setPixmap(svg_to_pixmap(SVG_COLOR, ORANGE_DARK, 16))
+        
+        node_label.setStyleSheet(f"""
+            QLabel {{
+                background-color: {ORANGE_LIGHT};
+                border: 2px solid {ORANGE_DARK};
+                border-radius: 12px;
+            }}
+        """)
+        node_layout.addWidget(node_label, alignment=Qt.AlignHCenter)
+
+        layout.addWidget(node_widget)
+
+        # Commit info
+        info_layout = QVBoxLayout()
+        info_layout.setSpacing(2)
+
+        # Branch tag
+        branch = commit.get("branch", "main")
+        branch_label = QLabel(branch)
+        branch_label.setStyleSheet(f"""
+            QLabel {{
+                background-color: {ORANGE};
+                color: {TEXT_BLACK};
+                border-radius: 10px;
+                padding: 2px 12px;
+                font-size: 11px;
+                font-weight: 600;
+            }}
+        """)
+        branch_label.setFixedWidth(branch_label.sizeHint().width() + 16)
+        info_layout.addWidget(branch_label)
+
+        # Commit message
+        message = commit.get("message", "No message")
+        msg_label = QLabel(message)
+        msg_label.setStyleSheet(f"color: {TEXT_PRIMARY}; font-size: 12px;")
+        msg_label.setWordWrap(True)
+        info_layout.addWidget(msg_label)
+
+        layout.addLayout(info_layout, stretch=1)
+
+
+class CommitGraphSection(QWidget):
+    """The GRAPH section with vertical commit timeline."""
+
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self._commits = []
+
+        layout = QVBoxLayout(self)
+        layout.setSpacing(0)
+        layout.setContentsMargins(0, 0, 0, 0)
+
+        # Scroll area for commits
+        scroll = QScrollArea()
+        scroll.setWidgetResizable(True)
+        scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
+        scroll.setStyleSheet("QScrollArea { border: none; background: transparent; }")
+
+        self._commits_container = QWidget()
+        self._commits_layout = QVBoxLayout(self._commits_container)
+        self._commits_layout.setSpacing(0)
+        self._commits_layout.setContentsMargins(8, 0, 8, 0)
+        self._commits_layout.addStretch()
+
+        scroll.setWidget(self._commits_container)
+        layout.addWidget(scroll)
+
+    def set_commits(self, commits: list):
+        """Update the displayed commits."""
+        self._commits = commits
+
+        # Clear existing items (except stretch)
+        while self._commits_layout.count() > 1:
+            child = self._commits_layout.takeAt(0)
+            if child.widget():
+                child.widget().deleteLater()
+
+        # Add new commit nodes
+        for i, commit in enumerate(commits):
+            node = CommitNode(commit)
+            self._commits_layout.insertWidget(i, node)
+
+            # Add connecting line if not last
+            if i < len(commits) - 1:
+                line = QFrame()
+                line.setFixedWidth(2)
+                line.setFixedHeight(20)
+                line.setStyleSheet(f"background-color: {ORANGE_DARK};")
+                
+                line_container = QWidget()
+                line_layout = QHBoxLayout(line_container)
+                line_layout.setContentsMargins(15, 0, 0, 0)
+                line_layout.addWidget(line)
+                line_layout.addStretch()
+                
+                self._commits_layout.insertWidget(i * 2 + 1, line_container)
+
+
 # -- Main Window --------------------------------------------------------------
 
 class GiteoPanel(QMainWindow):
-    """Main Giteo panel window."""
+    """Main Giteo panel window (VIT Design)."""
 
-    _append_log_signal = Signal(str, str)  # message, color
+    _append_log_signal = Signal(str, str)
 
     def __init__(self, ipc, project_dir):
         super().__init__()
@@ -283,7 +890,7 @@ class GiteoPanel(QMainWindow):
         self._threads = []
         self._collapsed = False
 
-        self.setWindowTitle("Giteo")
+        self.setWindowTitle("vit")
         self.setStyleSheet(STYLESHEET)
 
         # Frameless, always on top
@@ -293,128 +900,144 @@ class GiteoPanel(QMainWindow):
 
         # Position: left edge of screen, full height
         screen = QGuiApplication.primaryScreen().availableGeometry()
-        self._panel_width = 320
-        self._tab_width = 52  # Visible when collapsed: chevron (32px) + margin
+        self._panel_width = 380
+        self._tab_width = 52
         self._screen_geo = screen
         self.setGeometry(screen.x(), screen.y(), self._panel_width, screen.height())
 
         central = QWidget()
         self.setCentralWidget(central)
-        layout = QVBoxLayout(central)
-        layout.setSpacing(8)
-        layout.setContentsMargins(16, 12, 16, 12)
+        main_layout = QHBoxLayout(central)
+        main_layout.setSpacing(0)
+        main_layout.setContentsMargins(0, 0, 0, 0)
 
-        # Header with collapse chevron
+        # Main content area
+        content = QWidget()
+        content_layout = QVBoxLayout(content)
+        content_layout.setSpacing(12)
+        content_layout.setContentsMargins(16, 12, 16, 12)
+
+        # Header
         header = QHBoxLayout()
-        title = QLabel("GITEO")
+        header.setSpacing(8)
+
+        # Logo
+        logo_label = QLabel()
+        logo_label.setPixmap(svg_to_pixmap(SVG_LOGO, ORANGE, 24))
+        logo_label.setFixedSize(24, 24)
+        header.addWidget(logo_label)
+
+        # Title
+        title = QLabel("vit")
         title.setObjectName("titleLabel")
         header.addWidget(title)
+
         header.addStretch()
-        self.branch_label = QLabel("branch: —")
+
+        # Branch label
+        self.branch_label = QLabel("BRANCH: —")
         self.branch_label.setObjectName("branchLabel")
         header.addWidget(self.branch_label)
-        header.addSpacing(8)
-        self._chevron_btn = QPushButton("◂")
-        self._chevron_btn.setFixedSize(32, 48)
-        self._chevron_btn.setObjectName("chevronTab")
+
+        # Collapse chevron
+        self._chevron_btn = QPushButton("▶")
+        self._chevron_btn.setFixedSize(28, 28)
+        self._chevron_btn.setCursor(Qt.PointingHandCursor)
         self._chevron_btn.setStyleSheet(f"""
-            QPushButton#chevronTab {{
-                background-color: {BG_PANEL};
-                border: 1px solid {BORDER};
-                border-left: 3px solid {ORANGE};
-                border-radius: 0 8px 8px 0;
-                color: {ORANGE};
-                font-size: 18px;
-                font-weight: bold;
-                padding: 0;
-                margin-left: 2px;
-            }}
-            QPushButton#chevronTab:hover {{
+            QPushButton {{
                 background-color: {ORANGE};
-                color: {TEXT_BRIGHT};
-                border-left-color: {ORANGE_PRESSED};
+                color: {TEXT_BLACK};
+                border: none;
+                border-radius: 14px;
+                font-size: 12px;
+                font-weight: bold;
+            }}
+            QPushButton:hover {{
+                background-color: {ORANGE_HOVER};
             }}
         """)
         self._chevron_btn.clicked.connect(self.toggle_panel)
         header.addWidget(self._chevron_btn)
-        layout.addLayout(header)
+
+        content_layout.addLayout(header)
 
         # Separator
         sep = QFrame()
         sep.setObjectName("separator")
         sep.setFrameShape(QFrame.HLine)
-        layout.addWidget(sep)
+        content_layout.addWidget(sep)
 
-        # Log area
-        self.log = QTextEdit()
-        self.log.setReadOnly(True)
-        self.log.setPlaceholderText("Ready...")
-        layout.addWidget(self.log, stretch=1)
+        # Scroll area for sections
+        scroll = QScrollArea()
+        scroll.setWidgetResizable(True)
+        scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
+        scroll.setStyleSheet("QScrollArea { border: none; background: transparent; }")
 
-        # Buttons
-        btn_layout = QVBoxLayout()
-        btn_layout.setSpacing(6)
+        sections_widget = QWidget()
+        sections_layout = QVBoxLayout(sections_widget)
+        sections_layout.setSpacing(8)
+        sections_layout.setContentsMargins(0, 0, 0, 0)
 
-        # Save — primary action
-        save_btn = QPushButton("Save Version")
-        save_btn.setObjectName("primaryBtn")
-        save_btn.clicked.connect(self.on_save)
-        btn_layout.addWidget(save_btn)
+        # CHANGES section
+        self._changes_section = CollapsibleSection("CHANGES")
+        self._changes_widget = ChangesSection()
+        self._changes_widget.commit_requested.connect(self.on_save)
+        self._changes_section.add_widget(self._changes_widget)
+        sections_layout.addWidget(self._changes_section)
 
-        # Branch row
-        branch_row = QHBoxLayout()
-        branch_row.setSpacing(6)
-        new_branch_btn = QPushButton("New Branch")
-        new_branch_btn.clicked.connect(self.on_new_branch)
-        branch_row.addWidget(new_branch_btn)
-        switch_btn = QPushButton("Switch Branch")
-        switch_btn.clicked.connect(self.on_switch)
-        branch_row.addWidget(switch_btn)
-        btn_layout.addLayout(branch_row)
+        # MERGE FEEDBACK section
+        self._merge_section = CollapsibleSection("MERGE FEEDBACK")
+        self._merge_widget = MergeFeedbackSection()
+        self._merge_section.add_widget(self._merge_widget)
+        sections_layout.addWidget(self._merge_section)
 
-        # Push/Pull row
-        sync_row = QHBoxLayout()
-        sync_row.setSpacing(6)
-        push_btn = QPushButton("Push")
-        push_btn.clicked.connect(self.on_push)
-        sync_row.addWidget(push_btn)
-        pull_btn = QPushButton("Pull")
-        pull_btn.clicked.connect(self.on_pull)
-        sync_row.addWidget(pull_btn)
-        btn_layout.addLayout(sync_row)
+        # GRAPH section
+        self._graph_section = CollapsibleSection("GRAPH")
+        self._graph_widget = CommitGraphSection()
+        self._graph_section.add_widget(self._graph_widget)
+        sections_layout.addWidget(self._graph_section)
 
-        # Merge
-        merge_btn = QPushButton("Merge Branch")
-        merge_btn.clicked.connect(self.on_merge)
-        btn_layout.addWidget(merge_btn)
+        sections_layout.addStretch()
 
-        # Status
-        status_btn = QPushButton("Status")
-        status_btn.clicked.connect(self.on_status)
-        btn_layout.addWidget(status_btn)
+        scroll.setWidget(sections_widget)
+        content_layout.addWidget(scroll, stretch=1)
 
-        layout.addLayout(btn_layout)
+        main_layout.addWidget(content, stretch=1)
 
-        # Connect signal for thread-safe log updates
-        self._append_log_signal.connect(self._do_append_log)
+        # Tab for collapsed state
+        self._tab = QWidget()
+        self._tab.setFixedWidth(self._tab_width)
+        self._tab.setStyleSheet(f"background-color: {BG_DARK};")
+        tab_layout = QVBoxLayout(self._tab)
+        tab_layout.setContentsMargins(4, 12, 4, 12)
 
-        # Initial state
+        tab_btn = QPushButton("◀")
+        tab_btn.setFixedSize(32, 48)
+        tab_btn.setCursor(Qt.PointingHandCursor)
+        tab_btn.setStyleSheet(f"""
+            QPushButton {{
+                background-color: {ORANGE};
+                color: {TEXT_BLACK};
+                border: none;
+                border-radius: 4px;
+                font-size: 14px;
+                font-weight: bold;
+            }}
+            QPushButton:hover {{
+                background-color: {ORANGE_HOVER};
+            }}
+        """)
+        tab_btn.clicked.connect(self.toggle_panel)
+        tab_layout.addWidget(tab_btn)
+        tab_layout.addStretch()
+
+        self._tab.setVisible(False)
+        main_layout.addWidget(self._tab)
+
+        # Initial data load
         self.refresh_branch()
-        self.append_log("Giteo panel ready.", SUCCESS)
-
-    def append_log(self, msg, color=None):
-        """Thread-safe log append."""
-        self._append_log_signal.emit(msg, color or TEXT_PRIMARY)
-
-    @Slot(str, str)
-    def _do_append_log(self, msg, color):
-        cursor = self.log.textCursor()
-        cursor.movePosition(cursor.End)
-        self.log.setTextCursor(cursor)
-        self.log.insertHtml(
-            f'<span style="color:{color};">{msg}</span><br>'
-        )
-        self.log.ensureCursorVisible()
+        self.refresh_changes()
+        self.refresh_commits()
 
     def _run_async(self, request, callback):
         """Run an IPC request on a background thread."""
@@ -422,32 +1045,28 @@ class GiteoPanel(QMainWindow):
         worker = Worker(self.ipc, request)
         worker.moveToThread(thread)
         thread.started.connect(worker.run)
-        # Qt.QueuedConnection ensures callback runs on main thread (avoids SIGABRT on macOS)
         worker.finished.connect(
             lambda result: self._on_worker_done(thread, worker, callback, result),
-            Qt.ConnectionType.QueuedConnection,
+            Qt.QueuedConnection
         )
         worker.error.connect(
             lambda err: self._on_worker_error(thread, worker, err),
-            Qt.ConnectionType.QueuedConnection,
+            Qt.QueuedConnection
         )
         self._threads.append((thread, worker))
         thread.start()
 
     def _on_worker_done(self, thread, worker, callback, result):
-        try:
-            thread.quit()
-            thread.wait(2000)
-            self._threads = [(t, w) for t, w in self._threads if t is not thread]
-            callback(result)
-        except Exception as e:
-            self.append_log(f"Error: {e}", ERROR)
+        thread.quit()
+        thread.wait()
+        self._threads = [(t, w) for t, w in self._threads if t is not thread]
+        callback(result)
 
     def _on_worker_error(self, thread, worker, err):
         thread.quit()
         thread.wait()
         self._threads = [(t, w) for t, w in self._threads if t is not thread]
-        self.append_log(f"Error: {err}", ERROR)
+        print(f"[vit] Error: {err}")
 
     def refresh_branch(self):
         self._run_async({"action": "get_branch"}, self._on_branch_result)
@@ -455,158 +1074,45 @@ class GiteoPanel(QMainWindow):
     def _on_branch_result(self, result):
         if result.get("ok"):
             branch = result.get("branch", "?")
-            self.branch_label.setText(f"branch: {branch}")
+            self.branch_label.setText(f"BRANCH: {branch}")
 
-    # -- Button handlers -------------------------------------------------------
+    def refresh_changes(self):
+        self._run_async({"action": "get_changes"}, self._on_changes_result)
 
-    def on_save(self):
-        dlg = InputDialog(self, "Save Version", "Commit message:", "save version")
-        if dlg.exec() != QDialog.Accepted:
-            self.append_log("Save cancelled.")
-            return
-        msg = dlg.get_value().strip()
-        if not msg:
-            msg = "save version"
-        self.append_log(f"Saving: {msg}...")
-        self._run_async({"action": "save", "message": msg}, self._on_save_result)
+    def _on_changes_result(self, result):
+        if result.get("ok"):
+            changes = result.get("changes", {})
+            self._changes_widget.set_changes(changes)
+        # If action not implemented yet, show empty
+        elif "Unknown action" in result.get("error", ""):
+            self._changes_widget.set_changes({})
+
+    def refresh_commits(self):
+        self._run_async({"action": "get_commit_history", "limit": 10}, self._on_commits_result)
+
+    def _on_commits_result(self, result):
+        if result.get("ok"):
+            commits = result.get("commits", [])
+            self._graph_widget.set_commits(commits)
+        elif "Unknown action" in result.get("error", ""):
+            # Show placeholder commits for now
+            self._graph_widget.set_commits([
+                {"message": "Initial commit", "branch": "main", "category": "video"},
+            ])
+
+    def on_save(self, message: str):
+        """Handle commit request from Changes section."""
+        if not message:
+            message = "save version"
+        self._run_async({"action": "save", "message": message}, self._on_save_result)
 
     def _on_save_result(self, result):
         if result.get("ok"):
-            h = result.get("hash", "")
-            m = result.get("message", "")
-            self.append_log(f"Saved. {m} {h}", SUCCESS)
             self.refresh_branch()
+            self.refresh_changes()
+            self.refresh_commits()
         else:
-            self.append_log(f"Save failed: {result.get('error', '?')}", ERROR)
-
-    def on_new_branch(self):
-        dlg = InputDialog(self, "New Branch", "Branch name:")
-        if dlg.exec() != QDialog.Accepted:
-            self.append_log("New branch cancelled.")
-            return
-        name = dlg.get_value().strip()
-        if not name:
-            return
-        self.append_log(f"Creating branch '{name}'...")
-        self._run_async({"action": "new_branch", "name": name}, self._on_new_branch_result)
-
-    def _on_new_branch_result(self, result):
-        if result.get("ok"):
-            self.append_log(f"Switched to '{result.get('branch')}'.", SUCCESS)
-            self.refresh_branch()
-        else:
-            self.append_log(f"Error: {result.get('error', '?')}", ERROR)
-
-    def on_switch(self):
-        self.append_log("Loading branches...")
-        self._run_async({"action": "list_branches"}, self._on_switch_branches_loaded)
-
-    def _on_switch_branches_loaded(self, result):
-        if not result.get("ok"):
-            self.append_log(f"Error: {result.get('error', '?')}", ERROR)
-            return
-        branches = result.get("branches", [])
-        current = result.get("current", "")
-        if not branches:
-            self.append_log("No branches found.")
-            return
-        dlg = ChoiceDialog(self, "Switch Branch", f"Current: {current}\nSelect branch:", branches)
-        if dlg.exec() != QDialog.Accepted:
-            self.append_log("Switch cancelled.")
-            return
-        target = dlg.get_value()
-        if not target:
-            return
-        self.append_log(f"Switching to '{target}'...")
-        self._run_async({"action": "switch_branch", "branch": target}, self._on_switch_result)
-
-    def _on_switch_result(self, result):
-        try:
-            if result.get("ok"):
-                branch = result.get("branch", "?")
-                restored = result.get("restored", False)
-                msg = f"Switched to '{branch}'."
-                if restored:
-                    msg += " Timeline restored."
-                self.append_log(msg, SUCCESS)
-                self.refresh_branch()
-            else:
-                self.append_log(f"Error: {result.get('error', '?')}", ERROR)
-        except Exception as e:
-            self.append_log(f"Error: {e}", ERROR)
-
-    def on_merge(self):
-        self.append_log("Loading branches...")
-        self._run_async({"action": "list_branches"}, self._on_merge_branches_loaded)
-
-    def _on_merge_branches_loaded(self, result):
-        if not result.get("ok"):
-            self.append_log(f"Error: {result.get('error', '?')}", ERROR)
-            return
-        current = result.get("current", "")
-        branches = [b for b in result.get("branches", []) if b != current]
-        if not branches:
-            self.append_log("No other branches to merge.")
-            return
-        dlg = ChoiceDialog(self, "Merge Branch", f"Merging into '{current}':\nSelect branch:", branches)
-        if dlg.exec() != QDialog.Accepted:
-            self.append_log("Merge cancelled.")
-            return
-        target = dlg.get_value()
-        if not target:
-            return
-        self.append_log(f"Merging '{target}' into '{current}'...")
-        self._run_async({"action": "merge", "branch": target}, self._on_merge_result)
-
-    def _on_merge_result(self, result):
-        if result.get("ok"):
-            target = result.get("branch", "?")
-            current = result.get("current", "?")
-            issues = result.get("issues", "")
-            self.append_log(f"Merged '{target}' into '{current}'.", SUCCESS)
-            if issues:
-                self.append_log(issues, ORANGE)
-            self.append_log("Timeline restored.", SUCCESS)
-            self.refresh_branch()
-        else:
-            self.append_log(f"Merge failed: {result.get('error', '?')}", ERROR)
-
-    def on_push(self):
-        self.append_log("Pushing...")
-        self._run_async({"action": "push"}, self._on_push_result)
-
-    def _on_push_result(self, result):
-        if result.get("ok"):
-            self.append_log(f"Pushed '{result.get('branch', '?')}'.", SUCCESS)
-            output = result.get("output", "")
-            if output:
-                self.append_log(output)
-        else:
-            self.append_log(f"Push failed: {result.get('error', '?')}", ERROR)
-
-    def on_pull(self):
-        self.append_log("Pulling...")
-        self._run_async({"action": "pull"}, self._on_pull_result)
-
-    def _on_pull_result(self, result):
-        if result.get("ok"):
-            self.append_log(f"Pulled '{result.get('branch', '?')}'. Timeline restored.", SUCCESS)
-        else:
-            self.append_log(f"Pull failed: {result.get('error', '?')}", ERROR)
-
-    def on_status(self):
-        self._run_async({"action": "status"}, self._on_status_result)
-
-    def _on_status_result(self, result):
-        if result.get("ok"):
-            self.append_log(f"Branch: {result.get('branch', '?')}", ORANGE)
-            self.append_log(result.get("status", ""))
-            log = result.get("log", "")
-            if log:
-                self.append_log("Recent commits:")
-                self.append_log(log)
-        else:
-            self.append_log(f"Error: {result.get('error', '?')}", ERROR)
+            print(f"[vit] Save failed: {result.get('error', '?')}")
 
     def toggle_panel(self):
         """Slide the panel in/out from the left edge."""
@@ -616,7 +1122,6 @@ class GiteoPanel(QMainWindow):
         anim.setEasingCurve(QEasingCurve.InOutQuad)
 
         if self._collapsed:
-            # Expand: slide from off-screen to visible
             anim.setStartValue(QRect(
                 screen.x() - self._panel_width + self._tab_width,
                 screen.y(), self._panel_width, screen.height()
@@ -624,10 +1129,9 @@ class GiteoPanel(QMainWindow):
             anim.setEndValue(QRect(
                 screen.x(), screen.y(), self._panel_width, screen.height()
             ))
-            self._chevron_btn.setText("◂")
+            self._tab.setVisible(False)
             self._collapsed = False
         else:
-            # Collapse: slide most of the panel off-screen, keep tab visible
             anim.setStartValue(QRect(
                 screen.x(), screen.y(), self._panel_width, screen.height()
             ))
@@ -635,10 +1139,10 @@ class GiteoPanel(QMainWindow):
                 screen.x() - self._panel_width + self._tab_width,
                 screen.y(), self._panel_width, screen.height()
             ))
-            self._chevron_btn.setText("▸")
+            self._tab.setVisible(True)
             self._collapsed = True
 
-        self._anim = anim  # prevent GC
+        self._anim = anim
         anim.start()
 
     def closeEvent(self, event):
@@ -649,16 +1153,16 @@ class GiteoPanel(QMainWindow):
         event.accept()
 
 
-# -- Entry Point ---------------------------------------------------------------
+# -- Entry Point --------------------------------------------------------------
 
 def main():
-    parser = argparse.ArgumentParser(description="Giteo PySide6 Panel")
+    parser = argparse.ArgumentParser(description="Giteo PySide6 Panel (VIT)")
     parser.add_argument("--project-dir", required=True)
     parser.add_argument("--port", type=int, required=True)
     args = parser.parse_args()
 
     app = QApplication(sys.argv)
-    app.setApplicationName("Giteo")
+    app.setApplicationName("vit")
 
     ipc = IPCClient(args.port)
     window = GiteoPanel(ipc, args.project_dir)

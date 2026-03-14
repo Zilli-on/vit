@@ -253,3 +253,88 @@ def find_project_root(start_dir: Optional[str] = None) -> Optional[str]:
         if parent == current:
             return None
         current = parent
+
+
+def git_log_with_changes(project_dir: str, max_count: int = 20) -> List[dict]:
+    """Get commit log with file change information for each commit.
+
+    Returns list of dicts with: hash, message, branch, date, files_changed
+    """
+    result = _run(
+        [
+            "log",
+            f"--max-count={max_count}",
+            "--pretty=format:%H|%s|%ad|%D",
+            "--date=relative",
+            "--name-only",
+        ],
+        cwd=project_dir,
+        check=False,
+    )
+    if result.returncode != 0:
+        return []
+
+    commits = []
+    lines = result.stdout.strip().split("\n")
+    current_commit = None
+
+    for line in lines:
+        if "|" in line and line.count("|") >= 3:
+            # This is a commit line
+            if current_commit:
+                commits.append(current_commit)
+            parts = line.split("|", 3)
+            hash_val = parts[0]
+            message = parts[1]
+            date = parts[2]
+            refs = parts[3] if len(parts) > 3 else ""
+
+            # Extract branch from refs
+            branch = "main"
+            if refs:
+                for ref in refs.split(","):
+                    ref = ref.strip()
+                    if ref.startswith("HEAD -> "):
+                        branch = ref.replace("HEAD -> ", "")
+                        break
+                    elif "/" not in ref and ref not in ("HEAD", ""):
+                        branch = ref
+                        break
+
+            current_commit = {
+                "hash": hash_val[:7],
+                "message": message,
+                "date": date,
+                "branch": branch,
+                "files_changed": [],
+            }
+        elif line.strip() and current_commit:
+            # This is a file path
+            current_commit["files_changed"].append(line.strip())
+
+    if current_commit:
+        commits.append(current_commit)
+
+    return commits
+
+
+def categorize_commit(files_changed: List[str]) -> str:
+    """Determine the dominant category for a commit based on files changed.
+
+    Returns: 'audio', 'video', or 'color'
+    """
+    counts = {"audio": 0, "video": 0, "color": 0}
+
+    for f in files_changed:
+        if "audio" in f.lower():
+            counts["audio"] += 1
+        elif "color" in f.lower():
+            counts["color"] += 1
+        elif "cuts" in f.lower() or "video" in f.lower():
+            counts["video"] += 1
+
+    # Return category with most changes, default to video
+    max_cat = max(counts, key=counts.get)
+    if counts[max_cat] == 0:
+        return "video"
+    return max_cat
