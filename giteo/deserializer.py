@@ -120,7 +120,6 @@ def _wait_for_current_timeline(project, expected_timeline, max_retries: int = 10
     Returns True if the switch was confirmed, False if it timed out.
     """
     import time
-    _clear_markers(timeline)
 
     for attempt in range(max_retries):
         try:
@@ -449,15 +448,55 @@ def _focus_clip_for_color_page(timeline, clip):
     return clip
 
 
+def _apply_cdl(clip, node: ColorNodeGrade) -> bool:
+    """Apply CDL values to a clip node via SetCDL(). Returns True on success."""
+    if not (node.slope or node.offset or node.power or node.saturation is not None):
+        return False
+    cdl = {}
+    if node.slope:
+        cdl["NodeIndex"] = str(node.index)
+        cdl["Slope"] = " ".join(str(v) for v in node.slope)
+    if node.offset:
+        cdl["Offset"] = " ".join(str(v) for v in node.offset)
+    if node.power:
+        cdl["Power"] = " ".join(str(v) for v in node.power)
+    if node.saturation is not None:
+        cdl["Saturation"] = str(node.saturation)
+    if not cdl:
+        return False
+    try:
+        return bool(clip.SetCDL(cdl))
+    except (AttributeError, TypeError) as e:
+        print(f"  Warning: SetCDL failed: {e}")
+        return False
+
+
+def _apply_clip_adjustments(clip, node: ColorNodeGrade) -> None:
+    """Apply clip-level color adjustments via SetProperty()."""
+    props = {
+        "Contrast": node.contrast,
+        "Saturation": node.saturation,
+        "Hue": node.hue,
+        "Pivot": node.pivot,
+        "ColorBoost": node.color_boost,
+    }
+    for prop_name, value in props.items():
+        if value is not None:
+            try:
+                clip.SetProperty(prop_name, value)
+            except (AttributeError, TypeError):
+                pass
+
+
 def _apply_color(timeline, color_grades: Dict[str, ColorGrade],
                  project_dir: str = "", resolve_app=None) -> None:
     """Apply color grading data to clips on the timeline.
 
     Restore priority:
     1. DRX grade stills (complete grade including curves, qualifiers, etc.)
-    2. CDL values via SetCDL() (if present in JSON — e.g. from manual edit or AI merge)
+    2. CDL values via SetCDL() (if present in JSON)
     3. Clip-level adjustments via SetProperty() (contrast, saturation, etc.)
-    4. LUT paths via SetLUT() (minimal fallback)
+    4. LUT paths via SetLUT()
     """
     grades_dir = os.path.join(project_dir, "timeline", "grades") if project_dir else ""
     saved_page = None
@@ -484,7 +523,7 @@ def _apply_color(timeline, color_grades: Dict[str, ColorGrade],
                 if not grade:
                     continue
 
-                # Try DRX grade restore first (complete grade data)
+                # Priority 1: DRX grade restore (complete node-based grade)
                 if grade.drx_file and grades_dir:
                     drx_path = os.path.join(grades_dir, grade.drx_file)
                     if os.path.exists(drx_path):
@@ -495,14 +534,24 @@ def _apply_color(timeline, color_grades: Dict[str, ColorGrade],
                     else:
                         print(f"  Warning: Missing DRX file for {item_id}: {drx_path}")
 
-                # Fallback: apply LUTs from structural info
-                for node_info in grade.nodes:
-                    lut = node_info.get("lut", "")
-                    if lut:
-                        try:
-                            clip.SetLUT(node_info["index"], lut)
-                        except (AttributeError, TypeError):
-                            pass
+                # Priority 2: CDL values per node
+                cdl_applied = False
+                for node in grade.nodes:
+                    if _apply_cdl(clip, node):
+                        cdl_applied = True
+
+                # Priority 3: Clip-level adjustments (contrast, saturation, etc.)
+                if grade.nodes:
+                    _apply_clip_adjustments(clip, grade.nodes[0])
+
+                # Priority 4: LUT paths per node
+                if not cdl_applied:
+                    for node in grade.nodes:
+                        if node.lut:
+                            try:
+                                clip.SetLUT(node.index, node.lut)
+                            except (AttributeError, TypeError):
+                                pass
     finally:
         if saved_page and resolve_app and saved_page != "color":
             try:
@@ -624,7 +673,7 @@ def deserialize_timeline(timeline, project, project_dir: str, resolve_app=None) 
         else:
             print("  Warning: Skipping audio tracks — could not confirm timeline switch.")
 
-    _apply_color(new_timeline, color_grades, project_dir)
+    _apply_color(new_timeline, color_grades, project_dir, resolve_app=resolve_app)
     _apply_markers(new_timeline, markers)
 
     # Phase 5: Rename (AFTER all population is done)
