@@ -3,8 +3,8 @@
 Reads the JSON files and applies the state back to a Resolve timeline.
 """
 
-import json
 import os
+import time
 from typing import Dict, List
 
 from .json_writer import read_json
@@ -120,6 +120,7 @@ def _wait_for_current_timeline(project, expected_timeline, max_retries: int = 10
     Returns True if the switch was confirmed, False if it timed out.
     """
     import time
+    _clear_markers(timeline)
 
     for attempt in range(max_retries):
         try:
@@ -255,6 +256,17 @@ def _create_timeline_with_clips(media_pool, clip_infos: List[dict],
     return new_timeline, created_with_clips
 
 
+def _clear_markers(timeline) -> None:
+    """Remove all timeline markers when the API supports it."""
+    try:
+        markers = timeline.GetMarkers()
+        if markers:
+            for frame in list(markers.keys()):
+                timeline.DeleteMarkerAtFrame(frame)
+    except (AttributeError, TypeError):
+        pass
+
+
 def _apply_video_tracks(timeline, media_pool, video_tracks: List[VideoTrack], manifest: dict) -> None:
     """Apply video track items to the Resolve timeline via AppendToTimeline.
 
@@ -348,8 +360,97 @@ def _apply_audio_tracks(timeline, media_pool, audio_tracks: List[AudioTrack],
                     pass
 
 
+def _apply_grade_from_drx(timeline, clip, drx_path: str, item_id: str) -> bool:
+    """Apply a DRX grade using whichever Resolve API is actually available."""
+    timeline_apply = getattr(timeline, "ApplyGradeFromDRX", None)
+    if callable(timeline_apply):
+        for args in ((drx_path, 0, [clip]), (drx_path, 0, clip)):
+            try:
+                result = timeline_apply(*args)
+                if isinstance(result, bool):
+                    return result
+            except TypeError:
+                continue
+            except Exception as e:
+                print(f"  Warning: Timeline DRX apply failed for {item_id}: {e}")
+                break
+
+    get_node_graph = getattr(clip, "GetNodeGraph", None)
+    if callable(get_node_graph):
+        try:
+            node_graph = get_node_graph()
+        except Exception as e:
+            print(f"  Warning: Could not access node graph for {item_id}: {e}")
+            node_graph = None
+
+        graph_apply = getattr(node_graph, "ApplyGradeFromDRX", None) if node_graph else None
+        if callable(graph_apply):
+            try:
+                result = graph_apply(drx_path, 0)
+                if isinstance(result, bool):
+                    return result
+            except Exception as e:
+                print(f"  Warning: Node graph DRX apply failed for {item_id}: {e}")
+
+    print(f"  Warning: DRX restore API unavailable for {item_id}")
+    return False
+
+
+def _frame_to_tc(frame: int, start_frame: int, start_tc: str, fps: float) -> str:
+    """Convert an absolute timeline frame to timecode."""
+    parts = start_tc.split(":")
+    hh, mm, ss, ff = int(parts[0]), int(parts[1]), int(parts[2]), int(parts[3])
+    ifps = int(round(fps))
+    start_total = ((hh * 3600 + mm * 60 + ss) * ifps) + ff
+
+    total = start_total + (frame - start_frame)
+    if total < 0:
+        total = 0
+
+    out_ff = total % ifps
+    total_secs = total // ifps
+    out_ss = total_secs % 60
+    total_mins = total_secs // 60
+    out_mm = total_mins % 60
+    out_hh = total_mins // 60
+    return f"{out_hh:02d}:{out_mm:02d}:{out_ss:02d}:{out_ff:02d}"
+
+
+def _focus_clip_for_color_page(timeline, clip):
+    """Move the playhead to the clip so Color page APIs act on the right item."""
+    try:
+        fps = float(timeline.GetSetting("timelineFrameRate") or 24)
+        start_frame = int(timeline.GetStartFrame())
+        start_tc = timeline.GetStartTimecode() or "01:00:00:00"
+        clip_start = int(clip.GetStart())
+    except (AttributeError, TypeError, ValueError):
+        return clip
+
+    tc = _frame_to_tc(clip_start + 1, start_frame, start_tc, fps)
+    try:
+        timeline.SetCurrentTimecode(tc)
+        time.sleep(0.15)
+        for _ in range(3):
+            current = timeline.GetCurrentTimecode()
+            if current == tc:
+                break
+            timeline.SetCurrentTimecode(tc)
+            time.sleep(0.15)
+    except (AttributeError, TypeError):
+        return clip
+
+    try:
+        current_clip = timeline.GetCurrentVideoItem()
+        if current_clip:
+            return current_clip
+    except (AttributeError, TypeError):
+        pass
+
+    return clip
+
+
 def _apply_color(timeline, color_grades: Dict[str, ColorGrade],
-                 project_dir: str = "") -> None:
+                 project_dir: str = "", resolve_app=None) -> None:
     """Apply color grading data to clips on the timeline.
 
     Restore priority:
@@ -359,90 +460,55 @@ def _apply_color(timeline, color_grades: Dict[str, ColorGrade],
     4. LUT paths via SetLUT() (minimal fallback)
     """
     grades_dir = os.path.join(project_dir, "timeline", "grades") if project_dir else ""
+    saved_page = None
 
-    track_count = timeline.GetTrackCount("video")
-    for track_idx in range(1, track_count + 1):
-        clips = timeline.GetItemListInTrack("video", track_idx)
-        if not clips:
-            continue
+    if resolve_app:
+        try:
+            saved_page = resolve_app.GetCurrentPage()
+            if saved_page != "color":
+                resolve_app.OpenPage("color")
+                time.sleep(0.3)
+        except (AttributeError, TypeError):
+            saved_page = None
 
-        for i, clip in enumerate(clips):
-            item_id = f"item_{track_idx:03d}_{i:03d}"
-            grade = color_grades.get(item_id)
-            if not grade:
+    try:
+        track_count = timeline.GetTrackCount("video")
+        for track_idx in range(1, track_count + 1):
+            clips = timeline.GetItemListInTrack("video", track_idx)
+            if not clips:
                 continue
 
-            # Try DRX grade restore first (complete grade data)
-            if grade.drx_file and grades_dir:
-                drx_path = os.path.join(grades_dir, grade.drx_file)
-                if os.path.exists(drx_path):
-                    try:
-                        success = timeline.ApplyGradeFromDRX(
-                            drx_path, 0, clip)
-                        if success:
+            for i, clip in enumerate(clips):
+                item_id = f"item_{track_idx:03d}_{i:03d}"
+                grade = color_grades.get(item_id)
+                if not grade:
+                    continue
+
+                # Try DRX grade restore first (complete grade data)
+                if grade.drx_file and grades_dir:
+                    drx_path = os.path.join(grades_dir, grade.drx_file)
+                    if os.path.exists(drx_path):
+                        target_clip = _focus_clip_for_color_page(timeline, clip)
+                        if _apply_grade_from_drx(timeline, target_clip, drx_path, item_id):
+                            time.sleep(0.1)
                             continue
-                    except (AttributeError, TypeError):
-                        pass
+                    else:
+                        print(f"  Warning: Missing DRX file for {item_id}: {drx_path}")
 
-            # Apply per-node color values
-            for node_info in grade.nodes:
-                if isinstance(node_info, ColorNodeGrade):
-                    node = node_info
-                else:
-                    node = ColorNodeGrade.from_dict(node_info)
-
-                # Apply CDL values via SetCDL()
-                if node.slope or node.offset or node.power or node.saturation is not None:
-                    cdl_map = {"NodeIndex": str(node.index)}
-                    if node.slope:
-                        cdl_map["Slope"] = " ".join(str(v) for v in node.slope)
-                    if node.offset:
-                        cdl_map["Offset"] = " ".join(str(v) for v in node.offset)
-                    if node.power:
-                        cdl_map["Power"] = " ".join(str(v) for v in node.power)
-                    if node.saturation is not None:
-                        cdl_map["Saturation"] = str(node.saturation)
-                    try:
-                        clip.SetCDL(cdl_map)
-                    except (AttributeError, TypeError):
-                        pass
-
-                # Apply primary color wheels via SetProperty()
-                wheel_map = {
-                    "lift": "Lift",
-                    "gamma": "Gamma",
-                    "gain": "Gain",
-                    "color_offset": "Offset",
-                }
-                for attr, prop_name in wheel_map.items():
-                    wheel_val = getattr(node, attr, None)
-                    if wheel_val:
+                # Fallback: apply LUTs from structural info
+                for node_info in grade.nodes:
+                    lut = node_info.get("lut", "")
+                    if lut:
                         try:
-                            clip.SetProperty(prop_name, wheel_val)
+                            clip.SetLUT(node_info["index"], lut)
                         except (AttributeError, TypeError):
                             pass
-
-                # Apply clip-level adjustments
-                adj_map = {
-                    "contrast": "Contrast",
-                    "pivot": "Pivot",
-                    "hue": "Hue",
-                    "color_boost": "ColorBoost",
-                }
-                for attr, prop_name in adj_map.items():
-                    adj_val = getattr(node, attr, None)
-                    if adj_val is not None:
-                        try:
-                            clip.SetProperty(prop_name, adj_val)
-                        except (AttributeError, TypeError):
-                            pass
-
-                # Apply LUT as final fallback
-                if node.lut:
-                    try:
-                        clip.SetLUT(node.index, node.lut)
-                    except (AttributeError, TypeError):
-                        pass
+    finally:
+        if saved_page and resolve_app and saved_page != "color":
+            try:
+                resolve_app.OpenPage(saved_page)
+            except (AttributeError, TypeError):
+                pass
 
 
 def _apply_markers(timeline, markers: List[Marker]) -> None:
@@ -471,7 +537,7 @@ def _timeline_has_clips(timeline) -> bool:
     return False
 
 
-def deserialize_timeline(timeline, project, project_dir: str) -> None:
+def deserialize_timeline(timeline, project, project_dir: str, resolve_app=None) -> None:
     """Deserialize domain-split JSON files back into a Resolve timeline.
 
     Flow:
@@ -572,3 +638,15 @@ def deserialize_timeline(timeline, project, project_dir: str) -> None:
         pass
 
     print(f"  Restored timeline '{metadata.timeline_name}' from giteo snapshot")
+
+
+def restore_timeline_overlays(timeline, project_dir: str, resolve_app=None) -> None:
+    """Apply color grades and markers onto the current timeline without rebuilding clips."""
+    color_grades = _load_color(project_dir)
+    markers = _load_markers(project_dir)
+
+    _apply_color(timeline, color_grades, project_dir, resolve_app=resolve_app)
+    _clear_markers(timeline)
+    _apply_markers(timeline, markers)
+
+    print("  Restored timeline overlays from giteo snapshot")
