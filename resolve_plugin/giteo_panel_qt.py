@@ -18,14 +18,14 @@ from PySide6.QtCore import (
     Qt, Signal, QPropertyAnimation, QRect, QEasingCurve, QTimer, QSize, QByteArray, QRectF
 )
 from PySide6.QtGui import (
-    QFont, QColor, QPalette, QIcon, QGuiApplication, QPainter,
+    QFont, QFontMetrics, QColor, QPalette, QIcon, QGuiApplication, QPainter,
     QPixmap, QPen, QBrush, QPainterPath
 )
 from PySide6.QtWidgets import (
     QApplication, QMainWindow, QWidget, QVBoxLayout, QHBoxLayout,
     QPushButton, QLabel, QTextEdit, QLineEdit, QDialog, QDialogButtonBox,
     QListWidget, QListWidgetItem, QFrame, QSizePolicy, QSpacerItem,
-    QScrollArea, QComboBox, QGridLayout,
+    QScrollArea, QComboBox, QGridLayout, QListView,
 )
 from PySide6.QtSvg import QSvgRenderer
 
@@ -58,28 +58,6 @@ def _log(msg):
 
 # -- SVG Icons ----------------------------------------------------------------
 
-SVG_LOGO = """<svg width="24" height="24" viewBox="0 0 24 24" fill="none">
-  <circle cx="12" cy="12" r="10" stroke="{color}" stroke-width="2" fill="none"/>
-  <circle cx="8" cy="8" r="1.5" fill="{color}"/>
-  <circle cx="16" cy="8" r="1.5" fill="{color}" fill-opacity="0.5"/>
-  <circle cx="8" cy="16" r="1.5" fill="{color}" fill-opacity="0.7"/>
-  <circle cx="16" cy="16" r="1.5" fill="{color}" fill-opacity="0.3"/>
-  <circle cx="12" cy="12" r="1.5" fill="{color}"/>
-</svg>"""
-
-# Group 13.svg — header logo (dot pattern)
-SVG_GROUP_13 = """<svg width="12" height="12" viewBox="0 0 12 12" fill="none" xmlns="http://www.w3.org/2000/svg">
-<path d="M4.65215 1.32895C4.98041 1.89254 4.78561 2.61319 4.21705 2.93858C3.64849 3.26397 2.92148 3.07087 2.59322 2.50728C2.26496 1.94369 2.45976 1.22304 3.02832 0.897651C3.59688 0.572264 4.3239 0.765363 4.65215 1.32895Z" fill="{color}"/>
-<path d="M9.4072 9.49295C9.73546 10.0565 9.54066 10.7772 8.9721 11.1026C8.40354 11.428 7.67653 11.2349 7.34827 10.6713C7.02001 10.1077 7.21481 9.38704 7.78337 9.06165C8.35193 8.73627 9.07895 8.92936 9.4072 9.49295Z" fill="{color}" fill-opacity="0.5"/>
-<path d="M1.28778 7.33627C1.85635 7.01091 2.58336 7.20403 2.91159 7.76763C3.23983 8.33123 3.04499 9.05188 2.47642 9.37725C1.90785 9.70261 1.18084 9.50948 0.852609 8.94588C0.524374 8.38228 0.719207 7.66163 1.28778 7.33627Z" fill="{color}" fill-opacity="0.7"/>
-<path d="M9.524 2.62307C10.0926 2.29771 10.8196 2.49084 11.1478 3.05444C11.476 3.61804 11.2812 4.33869 10.7126 4.66405C10.1441 4.98941 9.41706 4.79629 9.08883 4.23269C8.7606 3.66909 8.95543 2.94844 9.524 2.62307Z" fill="{color}" fill-opacity="0.3"/>
-<path d="M7.52281 0.304981C8.15696 0.473414 8.53329 1.11954 8.36337 1.74814C8.19345 2.37674 7.54163 2.74977 6.90748 2.58134C6.27334 2.41291 5.89701 1.76679 6.06693 1.13819C6.23685 0.509588 6.88867 0.136549 7.52281 0.304981Z" fill="{color}" fill-opacity="0.2"/>
-<path d="M5.09293 9.41893C5.72707 9.58737 6.1034 10.2335 5.93348 10.8621C5.76356 11.4907 5.11174 11.8637 4.4776 11.6953C3.84345 11.5269 3.46712 10.8807 3.63704 10.2521C3.80696 9.62354 4.45878 9.2505 5.09293 9.41893Z" fill="{color}" fill-opacity="0.6"/>
-<path d="M1.76355 3.47423C2.3977 3.64266 2.77403 4.28879 2.60411 4.91739C2.43419 5.54599 1.78237 5.91902 1.14822 5.75059C0.514076 5.58216 0.137746 4.93604 0.307665 4.30744C0.477584 3.67884 1.12941 3.3058 1.76355 3.47423Z" fill="{color}" fill-opacity="0.8"/>
-<path d="M10.8521 6.24974C11.4862 6.41818 11.8625 7.0643 11.6926 7.6929C11.5227 8.3215 10.8709 8.69454 10.2367 8.5261C9.60258 8.35767 9.22625 7.71155 9.39617 7.08295C9.56608 6.45435 10.2179 6.08131 10.8521 6.24974Z" fill="{color}" fill-opacity="0.4"/>
-<path d="M8.55872 4.46151C9.37015 5.85465 8.88861 7.63605 7.48318 8.44038C6.07775 9.24471 4.28064 8.76738 3.46921 7.37425C2.65779 5.98111 3.13932 4.19971 4.54475 3.39538C5.95018 2.59105 7.7473 3.06838 8.55872 4.46151Z" fill="{color}"/>
-</svg>"""
-
 SVG_AUDIO = """<svg width="16" height="16" viewBox="0 0 16 16" fill="none">
   <path d="M3 5h2l3-3v12l-3-3H3a1 1 0 01-1-1V6a1 1 0 011-1z" fill="{color}"/>
   <path d="M11 4.5c1.5 1 2 2.5 2 3.5s-.5 2.5-2 3.5" stroke="{color}" stroke-width="1.5" stroke-linecap="round" fill="none"/>
@@ -97,38 +75,10 @@ SVG_COLOR = """<svg width="16" height="16" viewBox="0 0 16 16" fill="none">
   <circle cx="8" cy="8" r="2" fill="{color}"/>
 </svg>"""
 
-SVG_CHEVRON_DOWN = """<svg width="12" height="12" viewBox="0 0 12 12" fill="none">
-  <path d="M3 4.5L6 7.5L9 4.5" stroke="{color}" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
-</svg>"""
-
-SVG_CHEVRON_RIGHT = """<svg width="12" height="12" viewBox="0 0 12 12" fill="none">
-  <path d="M4.5 3L7.5 6L4.5 9" stroke="{color}" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
-</svg>"""
-
 SVG_CHEVRON_LEFT = """<svg width="12" height="12" viewBox="0 0 12 12" fill="none">
   <path d="M7.5 3L4.5 6L7.5 9" stroke="{color}" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
 </svg>"""
 
-SVG_CLOSE = """<svg width="12" height="12" viewBox="0 0 12 12" fill="none">
-  <path d="M2 2L10 10M10 2L2 10" stroke="{color}" stroke-width="2" stroke-linecap="round"/>
-</svg>"""
-
-SVG_SPARKLE = """<svg width="16" height="16" viewBox="0 0 16 16" fill="none">
-  <path d="M8 1l1.5 4.5L14 7l-4.5 1.5L8 13l-1.5-4.5L2 7l4.5-1.5L8 1z" fill="{color}"/>
-</svg>"""
-
-# Group 2.svg: commit message AI selector (white dots, various opacities)
-SVG_COMMIT_SELECTOR = """<svg width="12" height="12" viewBox="0 0 12 12" fill="none">
-  <path d="M4.65214 1.32895C4.98039 1.89254 4.78559 2.61319 4.21703 2.93858C3.64847 3.26397 2.92146 3.07087 2.5932 2.50728C2.26495 1.94369 2.45975 1.22304 3.02831 0.897651C3.59687 0.572264 4.32388 0.765363 4.65214 1.32895Z" fill="{color}"/>
-  <path d="M9.4072 9.49292C9.73546 10.0565 9.54066 10.7772 8.9721 11.1026C8.40354 11.4279 7.67653 11.2348 7.34827 10.6713C7.02001 10.1077 7.21481 9.38701 7.78337 9.06162C8.35193 8.73624 9.07895 8.92933 9.4072 9.49292Z" fill="{color}" fill-opacity="0.5"/>
-  <path d="M1.28781 7.33624C1.85638 7.01088 2.58339 7.204 2.91162 7.7676C3.23986 8.3312 3.04502 9.05185 2.47645 9.37722C1.90788 9.70258 1.18087 9.50945 0.852639 8.94585C0.524405 8.38225 0.719237 7.6616 1.28781 7.33624Z" fill="{color}" fill-opacity="0.7"/>
-  <path d="M9.52402 2.62307C10.0926 2.29771 10.8196 2.49084 11.1478 3.05444C11.4761 3.61804 11.2812 4.33869 10.7127 4.66405C10.1441 4.98941 9.41708 4.79629 9.08885 4.23269C8.76061 3.66909 8.95544 2.94844 9.52402 2.62307Z" fill="{color}" fill-opacity="0.3"/>
-  <path d="M7.52283 0.304981C8.15697 0.473414 8.5333 1.11954 8.36338 1.74814C8.19347 2.37674 7.54164 2.74977 6.9075 2.58134C6.27335 2.41291 5.89702 1.76679 6.06694 1.13819C6.23686 0.509588 6.88868 0.136549 7.52283 0.304981Z" fill="{color}" fill-opacity="0.2"/>
-  <path d="M5.0929 9.41896C5.72704 9.5874 6.10337 10.2335 5.93345 10.8621C5.76353 11.4907 5.11171 11.8638 4.47757 11.6953C3.84342 11.5269 3.46709 10.8808 3.63701 10.2522C3.80693 9.62357 4.45875 9.25053 5.0929 9.41896Z" fill="{color}" fill-opacity="0.6"/>
-  <path d="M1.76355 3.47423C2.3977 3.64266 2.77403 4.28879 2.60411 4.91739C2.43419 5.54599 1.78237 5.91902 1.14822 5.75059C0.514076 5.58216 0.137746 4.93604 0.307665 4.30744C0.477584 3.67884 1.12941 3.3058 1.76355 3.47423Z" fill="{color}" fill-opacity="0.8"/>
-  <path d="M10.8521 6.24971C11.4862 6.41815 11.8625 7.06427 11.6926 7.69287C11.5227 8.32147 10.8709 8.69451 10.2367 8.52607C9.60258 8.35764 9.22625 7.71152 9.39617 7.08292C9.56608 6.45432 10.2179 6.08128 10.8521 6.24971Z" fill="{color}" fill-opacity="0.4"/>
-  <path d="M7.21342 5.34055C7.54167 5.90413 7.34687 6.62479 6.77831 6.95018C6.20975 7.27556 5.48274 7.08246 5.15448 6.51888C4.82622 5.95529 5.02103 5.23463 5.58959 4.90925C6.15815 4.58386 6.88516 4.77696 7.21342 5.34055Z" fill="{color}"/>
-</svg>"""
 
 # -- Stylesheet ---------------------------------------------------------------
 
@@ -247,7 +197,15 @@ QComboBox QAbstractItemView {{
     color: {TEXT_PRIMARY};
     border: 1px solid {BORDER};
     selection-background-color: {ORANGE};
-    selection-color: {TEXT_BLACK};
+    selection-color: {TEXT_BRIGHT};
+}}
+QComboBox QAbstractItemView::item {{
+    color: {TEXT_PRIMARY};
+    padding: 6px 8px;
+}}
+QComboBox QAbstractItemView::item:selected {{
+    background-color: {ORANGE};
+    color: {TEXT_BRIGHT};
 }}
 QScrollArea {{
     background-color: transparent;
@@ -619,7 +577,21 @@ class ActionsSection(QWidget):
                 border-left: 1px solid rgba(0,0,0,0.2);
                 width: 20px;
             }}
+            QComboBox QAbstractItemView {{
+                background-color: {BG_PANEL};
+                color: {TEXT_PRIMARY};
+                selection-background-color: {ORANGE};
+                selection-color: {TEXT_BRIGHT};
+            }}
+            QComboBox QAbstractItemView::item {{
+                color: {TEXT_PRIMARY};
+            }}
+            QComboBox QAbstractItemView::item:selected {{
+                background-color: {ORANGE};
+                color: {TEXT_BRIGHT};
+            }}
         """)
+        self._switch_combo.setView(QListView())
         switch_row.addWidget(self._switch_combo, stretch=1)
         self._switch_btn = QPushButton("Switch")
         self._switch_btn.setFixedHeight(_action_height)
@@ -653,7 +625,21 @@ class ActionsSection(QWidget):
                 border-left: 1px solid rgba(0,0,0,0.2);
                 width: 20px;
             }}
+            QComboBox QAbstractItemView {{
+                background-color: {BG_PANEL};
+                color: {TEXT_PRIMARY};
+                selection-background-color: {ORANGE};
+                selection-color: {TEXT_BRIGHT};
+            }}
+            QComboBox QAbstractItemView::item {{
+                color: {TEXT_PRIMARY};
+            }}
+            QComboBox QAbstractItemView::item:selected {{
+                background-color: {ORANGE};
+                color: {TEXT_BRIGHT};
+            }}
         """)
+        self._merge_combo.setView(QListView())
         merge_row.addWidget(self._merge_combo, stretch=1)
         self._merge_btn = QPushButton("Merge")
         self._merge_btn.setFixedHeight(_action_height)
@@ -693,16 +679,20 @@ class ActionsSection(QWidget):
 
     def _on_merge_click(self):
         target = self._merge_combo.currentText()
-        if target:
+        if target and target != "None":
             self.merge_branch_requested.emit(target)
 
     def set_branches(self, branches: list, current: str):
         """Populate switch/merge combos. Call after list_branches."""
         self._switch_combo.clear()
         self._switch_combo.addItems(branches or [])
+        if "main" in (branches or []):
+            self._switch_combo.setCurrentText("main")
         self._merge_combo.clear()
+        self._merge_combo.addItem("None")
         merge_targets = [b for b in (branches or []) if b != current]
         self._merge_combo.addItems(merge_targets)
+        self._merge_combo.setCurrentIndex(0)
 
 
 # -- Change Item Widget -------------------------------------------------------
@@ -716,19 +706,22 @@ class ChangeItemWidget(QWidget):
 
         layout = QHBoxLayout(self)
         layout.setSpacing(10)
-        layout.setContentsMargins(0, 6, 0, 6)
+        layout.setContentsMargins(0, 2, 0, 2)
 
-        # Icon (mockup Group 14: video film strip, audio waveform, color circle)
+        # Icon: Unicode symbols for each category
         icon_label = QLabel()
-        icon_color = ORANGE_DARK
         if category == "audio":
-            icon_label.setPixmap(svg_to_pixmap(SVG_AUDIO, icon_color, 16))
+            icon_label.setText("♪")
         elif category == "video":
-            icon_label.setPixmap(svg_to_pixmap(SVG_VIDEO, icon_color, 16))
+            icon_label.setText("▶")
         elif category == "color":
-            icon_label.setPixmap(svg_to_pixmap(SVG_COLOR, icon_color, 16))
-        icon_label.setFixedSize(16, 16)
+            icon_label.setText("◉")
+        icon_label.setFixedSize(18, 18)
         icon_label.setAlignment(Qt.AlignCenter)
+        icon_label.setStyleSheet(f"""
+            color: {ORANGE};
+            font-size: 14px;
+        """)
         layout.addWidget(icon_label)
 
         # Name (mockup: #4A4A4A muted text)
@@ -748,6 +741,7 @@ class ChangesSection(QWidget):
     """The CHANGES section with commit input and file list (mockup-aligned)."""
 
     commit_requested = Signal(str)
+    refresh_requested = Signal()
 
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -793,11 +787,14 @@ class ChangesSection(QWidget):
 
         layout.addWidget(input_frame)
 
-        # Commit button: full-width orange (#FFB463), 5px radius
+        # Commit + Refresh row: half and half
+        btn_row = QHBoxLayout()
+        btn_row.setSpacing(8)
+
         self._commit_btn = QPushButton("Commit")
         self._commit_btn.setObjectName("primaryBtn")
         self._commit_btn.clicked.connect(self._on_commit)
-        self._commit_btn.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
+        self._commit_btn.setFixedHeight(40)
         self._commit_btn.setStyleSheet(f"""
             QPushButton#primaryBtn {{
                 background-color: {ORANGE};
@@ -815,7 +812,31 @@ class ChangesSection(QWidget):
                 background-color: {ORANGE_PRESSED};
             }}
         """)
-        layout.addWidget(self._commit_btn)
+        btn_row.addWidget(self._commit_btn, stretch=1)
+
+        self._refresh_btn = QPushButton("Refresh")
+        self._refresh_btn.setCursor(Qt.PointingHandCursor)
+        self._refresh_btn.clicked.connect(self.refresh_requested.emit)
+        self._refresh_btn.setFixedHeight(40)
+        self._refresh_btn.setStyleSheet(f"""
+            QPushButton {{
+                background-color: {BG_PANEL};
+                color: {TEXT_PRIMARY};
+                border: 1px solid {BORDER};
+                border-radius: 5px;
+                font-size: 13px;
+                font-weight: 500;
+            }}
+            QPushButton:hover {{
+                border-color: {ORANGE};
+            }}
+            QPushButton:pressed {{
+                background-color: #3E3E42;
+            }}
+        """)
+        btn_row.addWidget(self._refresh_btn, stretch=1)
+
+        layout.addLayout(btn_row)
 
         # Changes sub-header: indented from input/commit
         self._changes_header = QLabel("Changes")
@@ -824,8 +845,8 @@ class ChangesSection(QWidget):
             color: {TEXT_DARK};
             font-size: 11px;
             font-weight: 500;
-            padding-top: 12px;
-            padding-bottom: 4px;
+            padding-top: 6px;
+            padding-bottom: 2px;
             padding-left: 12px;
         """)
         layout.addWidget(self._changes_header)
@@ -833,8 +854,8 @@ class ChangesSection(QWidget):
         # Changes list container: indented to match header
         self._changes_container = QWidget()
         self._changes_layout = QVBoxLayout(self._changes_container)
-        self._changes_layout.setSpacing(4)
-        self._changes_layout.setContentsMargins(12, 0, 0, 0)
+        self._changes_layout.setSpacing(0)
+        self._changes_layout.setContentsMargins(24, 0, 0, 0)
         layout.addWidget(self._changes_container)
 
         layout.addStretch()
@@ -1006,7 +1027,7 @@ class CommitGraphWidget(QWidget):
         """Draw the main vertical line connecting main branch commits."""
         # Find main branch commits
         main_indices = [i for i, is_main in enumerate(self._is_main_commit) if is_main]
-        
+
         if len(main_indices) < 2:
             # If less than 2 main commits, draw line through all commits
             if len(self._commits) >= 2:
@@ -1017,15 +1038,35 @@ class CommitGraphWidget(QWidget):
                 y2 = self._get_commit_y(len(self._commits) - 1)
                 painter.drawLine(GRAPH_MAIN_X, y1, GRAPH_MAIN_X, y2)
             return
-        
+
         pen = QPen(QColor(GRAPH_COLOR))
         pen.setWidth(2)
         painter.setPen(pen)
-        
+
         # Draw line from first to last main commit
         y1 = self._get_commit_y(main_indices[0])
         y2 = self._get_commit_y(main_indices[-1])
         painter.drawLine(GRAPH_MAIN_X, y1, GRAPH_MAIN_X, y2)
+
+        # Draw vertical line connecting branch commits of the same branch
+        from collections import defaultdict
+        branch_groups = defaultdict(list)
+        for i, is_main in enumerate(self._is_main_commit):
+            if not is_main:
+                branch_name = self._commits[i].get("branch", "")
+                branch_groups[branch_name].append(i)
+
+        for branch_name, indices in branch_groups.items():
+            if len(indices) >= 2:
+                color = QColor(GRAPH_COLOR)
+                color.setAlphaF(0.5)
+                pen = QPen(color)
+                pen.setWidth(1)
+                pen.setDashPattern([3, 3])
+                painter.setPen(pen)
+                y1 = self._get_commit_y(indices[0])
+                y2 = self._get_commit_y(indices[-1])
+                painter.drawLine(GRAPH_BRANCH_X, y1, GRAPH_BRANCH_X, y2)
 
     def _draw_branch_curves(self, painter):
         """Draw smooth branch forks and merges.
@@ -1151,30 +1192,35 @@ class CommitGraphWidget(QWidget):
         
         # Only draw branch pill for HEAD commit
         if is_head:
-            # Calculate message width to position pill after it
-            msg_width = len(message) * 6 + 12
+            # Use QFontMetrics for accurate message width
+            fm = QFontMetrics(QFont("SF Pro Display", 11))
+            msg_width = fm.horizontalAdvance(message) + 10
             pill_x = text_x + msg_width
-            pill_y = y - 9
-            self._draw_branch_pill(painter, branch, pill_x, pill_y)
+            self._draw_branch_pill(painter, branch, pill_x, y)
 
     def _draw_branch_pill(self, painter, branch: str, x: int, y: int):
-        """Draw a branch label pill (all same orange color)."""
+        """Draw a branch label pill (all same orange color), vertically centered on y."""
         color = QColor(GRAPH_COLOR)
-        
-        # Calculate pill size
+
+        # Calculate pill size using font metrics
         font = QFont("SF Pro Display", 10, QFont.DemiBold)
         painter.setFont(font)
-        text_width = len(branch) * 7 + 16
-        pill_height = 18
-        
-        # Draw pill background
+        fm = QFontMetrics(font)
+        text_width = fm.horizontalAdvance(branch)
+        h_pad = 16  # horizontal padding (8 each side)
+        pill_width = text_width + h_pad
+        pill_height = 22
+
+        # Draw pill background — centered on the node Y
+        pill_y = y - pill_height // 2
         painter.setPen(Qt.NoPen)
         painter.setBrush(QBrush(color))
-        painter.drawRoundedRect(x, y, text_width, pill_height, 9, 9)
-        
-        # Draw text
+        painter.drawRoundedRect(x, pill_y, pill_width, pill_height, pill_height // 2, pill_height // 2)
+
+        # Draw text centered in pill
+        text_y = pill_y + (pill_height + fm.ascent() - fm.descent()) // 2
         painter.setPen(QColor(TEXT_BLACK))
-        painter.drawText(x + 8, y + 13, branch)
+        painter.drawText(x + h_pad // 2, text_y, branch)
 
 
 class CommitGraphSection(QWidget):
@@ -1338,6 +1384,7 @@ class GiteoPanel(QMainWindow):
         self._changes_section = CollapsibleSection("CHANGES")
         self._changes_widget = ChangesSection()
         self._changes_widget.commit_requested.connect(self.on_save)
+        self._changes_widget.refresh_requested.connect(self.refresh_changes)
         self._changes_section.add_widget(self._changes_widget)
         sections_layout.addWidget(self._changes_section)
 
