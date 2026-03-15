@@ -83,7 +83,24 @@ if (Test-Path "$VIT_SRC\.git") {
 # ── Install Python package ───────────────────
 
 Write-Host "  Installing Vit package..."
-& $PYTHON -m pip install $VIT_SRC --quiet 2>$null
+$pipOutput = & $PYTHON -m pip install $VIT_SRC --quiet 2>&1
+# If pip warns the Scripts dir is not on PATH, add it for this session and permanently
+$scriptsDir = $null
+foreach ($line in $pipOutput) {
+    if ($line -match "installed in '([^']+)'.*not on PATH") {
+        $scriptsDir = $Matches[1]
+    }
+}
+if ($scriptsDir -and -not ($env:PATH -split ';' | Where-Object { $_ -eq $scriptsDir })) {
+    Write-Host "  Adding $scriptsDir to PATH..."
+    $env:PATH = "$scriptsDir;$env:PATH"
+    # Persist for future terminal sessions
+    [System.Environment]::SetEnvironmentVariable(
+        "PATH",
+        "$scriptsDir;" + [System.Environment]::GetEnvironmentVariable("PATH", "User"),
+        "User"
+    )
+}
 
 # ── Install Resolve plugin scripts ───────────
 

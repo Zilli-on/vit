@@ -86,6 +86,27 @@ fi
 echo "  Installing Vit package..."
 $PIP install "$VIT_SRC" --quiet 2>/dev/null || $PIP install "$VIT_SRC" --quiet --user
 
+# Ensure pip's script directory is on PATH
+if ! command -v vit &>/dev/null; then
+    USER_BIN="$HOME/.local/bin"
+    if [ -f "$USER_BIN/vit" ]; then
+        echo "  Adding $USER_BIN to PATH..."
+        export PATH="$USER_BIN:$PATH"
+        # Persist to shell profile
+        SHELL_RC=""
+        if [ -f "$HOME/.zshrc" ]; then
+            SHELL_RC="$HOME/.zshrc"
+        elif [ -f "$HOME/.bashrc" ]; then
+            SHELL_RC="$HOME/.bashrc"
+        elif [ -f "$HOME/.bash_profile" ]; then
+            SHELL_RC="$HOME/.bash_profile"
+        fi
+        if [ -n "$SHELL_RC" ] && ! grep -q 'export PATH=.*\.local/bin' "$SHELL_RC" 2>/dev/null; then
+            echo 'export PATH="$HOME/.local/bin:$PATH"' >> "$SHELL_RC"
+        fi
+    fi
+fi
+
 # ── Install Resolve plugin scripts ───────────
 
 echo "  Installing DaVinci Resolve scripts..."
