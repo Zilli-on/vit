@@ -865,92 +865,6 @@ class ChangesSection(QWidget):
         return self._message_input.text().strip()
 
 
-# -- Merge Feedback Section Widget --------------------------------------------
-
-class MergeFeedbackSection(QWidget):
-    """The MERGE FEEDBACK section with two branch panels."""
-
-    merge_requested = Signal(str, str)  # branch_a, branch_b
-
-    def __init__(self, parent=None):
-        super().__init__(parent)
-
-        layout = QVBoxLayout(self)
-        layout.setSpacing(12)
-        layout.setContentsMargins(0, 0, 0, 0)
-
-        # Two-panel grid
-        panels_layout = QHBoxLayout()
-        panels_layout.setSpacing(8)
-
-        # Left panel (branch one)
-        self._left_panel = self._create_branch_panel("branch-one")
-        panels_layout.addWidget(self._left_panel)
-
-        # Right panel (branch two)
-        self._right_panel = self._create_branch_panel("branch-two")
-        panels_layout.addWidget(self._right_panel)
-
-        layout.addLayout(panels_layout)
-
-    def _create_branch_panel(self, default_name: str) -> QWidget:
-        """Create a branch comparison panel."""
-        panel = QFrame()
-        panel.setObjectName("changePanel")
-        panel.setStyleSheet(f"""
-            QFrame#changePanel {{
-                background-color: {ORANGE_LIGHT};
-                border-radius: 5px;
-                padding: 8px;
-            }}
-        """)
-
-        panel_layout = QVBoxLayout(panel)
-        panel_layout.setSpacing(8)
-        panel_layout.setContentsMargins(8, 8, 8, 8)
-
-        # Branch selector
-        branch_combo = QComboBox()
-        branch_combo.addItem(default_name)
-        branch_combo.setStyleSheet(f"""
-            QComboBox {{
-                background-color: {ORANGE};
-                color: {TEXT_BLACK};
-                border: none;
-                border-radius: 15px;
-                padding: 6px 16px;
-                font-size: 12px;
-                font-weight: 600;
-            }}
-        """)
-        panel_layout.addWidget(branch_combo)
-
-        # Summary area (placeholder)
-        summary = QFrame()
-        summary.setMinimumHeight(100)
-        summary.setStyleSheet(f"""
-            QFrame {{
-                background-color: {ORANGE_LIGHT};
-                border: none;
-                border-radius: 3px;
-            }}
-        """)
-        panel_layout.addWidget(summary)
-
-        return panel
-
-    def set_branches(self, branches: list):
-        """Update available branches in both dropdowns."""
-        for panel in [self._left_panel, self._right_panel]:
-            combo = panel.findChild(QComboBox)
-            if combo:
-                current = combo.currentText()
-                combo.clear()
-                combo.addItems(branches)
-                if current in branches:
-                    combo.setCurrentText(current)
-
-
 # -- Commit Graph Section Widget ----------------------------------------------
 
 class CommitNode(QWidget):
@@ -1198,12 +1112,12 @@ class GiteoPanel(QMainWindow):
         self._log_text.setStyleSheet(f"""
             QTextEdit {{
                 background-color: {BG_INPUT};
-                color: {TEXT_PRIMARY};
+                color: #A8A8A8;
                 border: 1px solid {BORDER};
                 border-radius: 5px;
                 padding: 8px;
-                font-family: "SF Mono", "Monaco", "Consolas", monospace;
-                font-size: 11px;
+                font-family: "SF Pro Display", "Segoe UI", "Helvetica Neue", sans-serif;
+                font-size: 13px;
             }}
         """)
         self._log_section.add_widget(self._log_text)
@@ -1215,12 +1129,6 @@ class GiteoPanel(QMainWindow):
         self._changes_widget.commit_requested.connect(self.on_save)
         self._changes_section.add_widget(self._changes_widget)
         sections_layout.addWidget(self._changes_section)
-
-        # MERGE FEEDBACK section
-        self._merge_section = CollapsibleSection("MERGE FEEDBACK")
-        self._merge_widget = MergeFeedbackSection()
-        self._merge_section.add_widget(self._merge_widget)
-        sections_layout.addWidget(self._merge_section)
 
         # GRAPH section
         self._graph_section = CollapsibleSection("GRAPH")
