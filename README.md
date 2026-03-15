@@ -1,5 +1,7 @@
 # Vit — Git for Video Editing
 
+[![Vit Demo](https://img.youtube.com/vi/phS28hhJSP8/maxresdefault.jpg)](https://www.youtube.com/watch?v=phS28hhJSP8)
+
 Vit brings git-style version control to video editing. Instead of versioning raw media files, Vit tracks **timeline metadata** — clip placements, color grades, audio levels, effects, and markers — as lightweight JSON, using Git as the backend.
 
 Collaborators (editors, colorists, sound designers) work in parallel on branches and merge changes cleanly, just like developers with code.
