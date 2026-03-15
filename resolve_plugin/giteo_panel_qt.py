@@ -902,8 +902,8 @@ GRAPH_COLOR_LIGHT = "#FFBA6B40"  # 25% opacity for branch lines
 
 # Graph layout constants
 GRAPH_ROW_HEIGHT = 42
-GRAPH_MAIN_X = 10
-GRAPH_BRANCH_X = 40  # X position for branch commits (offset from main)
+GRAPH_LANE_WIDTH = 30   # Horizontal distance between lanes
+GRAPH_FIRST_LANE_X = 15  # X position of lane 0 (main)
 GRAPH_NODE_SIZE = 10
 
 
@@ -937,13 +937,13 @@ def _get_graph_assets():
 
 
 class CommitGraphWidget(QWidget):
-    """Custom widget that draws the git commit graph with a single orange color."""
+    """Custom widget that draws a GitHub-style git commit graph with lane-based layout."""
 
     def __init__(self, parent=None):
         super().__init__(parent)
         self._commits = []
-        self._is_main_commit = []  # True if commit is on main branch (for X position)
-        self._commit_rows = []  # Row (Y) position for each commit
+        self._lanes = []      # lane index for each commit
+        self._max_lanes = 1
         self._head = ""
         self.setMinimumHeight(350)
 
@@ -951,51 +951,95 @@ class CommitGraphWidget(QWidget):
         """Set the graph data."""
         self._commits = commits
         self._head = head
-        
-        # Determine visual lane based on branch NAME (not reachability)
-        # This preserves branch history even after merge
-        self._is_main_commit = []
-        for commit in self._commits:
-            branch = commit.get("branch", "main")
-            # Visual positioning: main commits on left, branch commits on right
-            is_main = branch in ("main", "master")
-            self._is_main_commit.append(is_main)
-        
-        # Calculate row positions (parallel commits share same row)
-        self._commit_rows = self._calculate_row_positions()
-        
-        # Calculate required height
-        num_rows = max(self._commit_rows) + 1 if self._commit_rows else 1
+        self._lanes, self._max_lanes = self._assign_lanes()
+
+        num_rows = len(self._commits) if self._commits else 1
         height = max(350, num_rows * GRAPH_ROW_HEIGHT + 40)
         self.setMinimumHeight(height)
         self.setFixedHeight(height)
         self.update()
-    
-    def _calculate_row_positions(self) -> list:
-        """Calculate row (Y) positions for commits.
-        
-        Each commit gets its own row. No overlapping.
-        Commits are ordered by index (newest first = top).
+
+    def _assign_lanes(self) -> tuple:
+        """Assign visual lanes using the standard git-graph algorithm.
+
+        Processes commits top-down (newest first). Maintains a list of
+        expected commit hashes where position = lane. When a commit is found,
+        its first parent replaces it in the same lane; additional parents
+        (from merge commits) get new lanes.
+
+        Returns (lanes_list, max_lane_count).
         """
         if not self._commits:
-            return []
-        
-        # Simple: each commit gets its own row based on index
-        return list(range(len(self._commits)))
+            return [], 1
+
+        lanes = [0] * len(self._commits)
+        active = []  # list of commit hashes; index = lane (None = empty slot)
+        max_lanes = 1
+
+        for i, commit in enumerate(self._commits):
+            h = commit["hash"]
+            parents = commit.get("parents", [])
+
+            # Find this commit in active lanes
+            if h in active:
+                lane = active.index(h)
+            else:
+                # New branch head — use first empty slot or append
+                if None in active:
+                    lane = active.index(None)
+                    active[lane] = h
+                else:
+                    lane = len(active)
+                    active.append(h)
+
+            lanes[i] = lane
+            max_lanes = max(max_lanes, len(active))
+
+            if parents:
+                first_parent = parents[0]
+                if first_parent in active:
+                    # First parent already tracked in another lane
+                    fp_lane = active.index(first_parent)
+                    if fp_lane != lane:
+                        # This lane merges into parent's lane — close this lane
+                        active[lane] = None
+                    # else: same lane, already correct
+                else:
+                    # Continue this lane with first parent
+                    active[lane] = first_parent
+
+                # Additional parents (merge) get new lanes
+                for p in parents[1:]:
+                    if p not in active:
+                        if None in active:
+                            slot = active.index(None)
+                            active[slot] = p
+                        else:
+                            active.append(p)
+                        max_lanes = max(max_lanes, len(active))
+            else:
+                # Root commit — close lane
+                active[lane] = None
+
+            # Trim trailing empty slots
+            while active and active[-1] is None:
+                active.pop()
+
+        return lanes, max_lanes
+
+    def _lane_x(self, lane: int) -> int:
+        """Get X pixel position for a lane."""
+        return GRAPH_FIRST_LANE_X + lane * GRAPH_LANE_WIDTH
 
     def _get_commit_y(self, index: int) -> int:
-        """Get Y position for a commit by its row."""
-        if hasattr(self, '_commit_rows') and self._commit_rows and index < len(self._commit_rows):
-            row = self._commit_rows[index]
-        else:
-            row = index
-        return 20 + row * GRAPH_ROW_HEIGHT
+        """Get Y position for a commit by its index."""
+        return 20 + index * GRAPH_ROW_HEIGHT
 
     def paintEvent(self, event):
         """Draw the graph."""
         painter = QPainter(self)
         painter.setRenderHint(QPainter.Antialiasing)
-        
+
         if not self._commits:
             painter.setPen(QColor(TEXT_DARK))
             painter.drawText(20, 30, "No commits yet")
@@ -1003,144 +1047,93 @@ class CommitGraphWidget(QWidget):
             return
 
         assets = _get_graph_assets()
-        
-        # First: draw main vertical line (connects main branch commits)
-        self._draw_main_line(painter)
-        
-        # Second: draw branch curves connecting main to branch commits
-        self._draw_branch_curves(painter)
-        
-        # Third: draw nodes and labels
+
+        # 1. Draw connections (lines/curves between commits and parents)
+        self._draw_connections(painter)
+
+        # 2. Draw nodes and labels on top
         for i, commit in enumerate(self._commits):
             self._draw_commit(painter, i, commit, assets)
-        
+
         painter.end()
 
-    def _get_commit_x(self, index: int) -> int:
-        """Get X position for a commit. Main commits on left, branch commits offset right."""
-        if self._is_main_commit[index]:
-            return GRAPH_MAIN_X
-        else:
-            return GRAPH_BRANCH_X  # Branch commits offset to the right
+    def _draw_connections(self, painter):
+        """Draw all connection lines between commits and their parents.
 
-    def _draw_main_line(self, painter):
-        """Draw the main vertical line connecting main branch commits."""
-        # Find main branch commits
-        main_indices = [i for i, is_main in enumerate(self._is_main_commit) if is_main]
-
-        if len(main_indices) < 2:
-            # If less than 2 main commits, draw line through all commits
-            if len(self._commits) >= 2:
-                pen = QPen(QColor(GRAPH_COLOR))
-                pen.setWidth(2)
-                painter.setPen(pen)
-                y1 = self._get_commit_y(0)
-                y2 = self._get_commit_y(len(self._commits) - 1)
-                painter.drawLine(GRAPH_MAIN_X, y1, GRAPH_MAIN_X, y2)
-            return
-
-        pen = QPen(QColor(GRAPH_COLOR))
-        pen.setWidth(2)
-        painter.setPen(pen)
-
-        # Draw line from first to last main commit
-        y1 = self._get_commit_y(main_indices[0])
-        y2 = self._get_commit_y(main_indices[-1])
-        painter.drawLine(GRAPH_MAIN_X, y1, GRAPH_MAIN_X, y2)
-
-        # Draw vertical line connecting branch commits of the same branch
-        from collections import defaultdict
-        branch_groups = defaultdict(list)
-        for i, is_main in enumerate(self._is_main_commit):
-            if not is_main:
-                branch_name = self._commits[i].get("branch", "")
-                branch_groups[branch_name].append(i)
-
-        for branch_name, indices in branch_groups.items():
-            if len(indices) >= 2:
-                color = QColor(GRAPH_COLOR)
-                color.setAlphaF(0.5)
-                pen = QPen(color)
-                pen.setWidth(1)
-                pen.setDashPattern([3, 3])
-                painter.setPen(pen)
-                y1 = self._get_commit_y(indices[0])
-                y2 = self._get_commit_y(indices[-1])
-                painter.drawLine(GRAPH_BRANCH_X, y1, GRAPH_BRANCH_X, y2)
-
-    def _draw_branch_curves(self, painter):
-        """Draw smooth branch forks and merges.
-        
-        Fork: smooth curve from parent node to branch node
-        Merge: vertical line up from branch, smooth curve into merge node
+        Same-lane on lane 0 (main): solid line.
+        Same-lane on branch lanes: dashed line.
+        Cross-lane: dashed curve that only spans one row-height at the
+        transition point, with straight vertical segments for the rest.
         """
-        color = QColor(GRAPH_COLOR)
-        color.setAlphaF(0.5)
-        
-        pen = QPen(color)
-        pen.setWidth(1)
-        pen.setDashPattern([3, 3])
-        painter.setPen(pen)
-        
-        branch_x = GRAPH_BRANCH_X
-        
-        # Build hash -> index lookup
-        hash_to_idx = {c.get("hash"): i for i, c in enumerate(self._commits)}
-        
-        # Track branch commits and their fork/merge points
-        branch_indices = [i for i, is_main in enumerate(self._is_main_commit) if not is_main]
-        
-        for branch_idx in branch_indices:
-            branch_commit = self._commits[branch_idx]
-            branch_y = self._get_commit_y(branch_idx)
-            
-            # Find fork point (parent of branch commit)
-            parents = branch_commit.get("parents", [])
-            fork_parent_idx = None
-            if parents:
-                parent_idx = hash_to_idx.get(parents[0])
-                if parent_idx is not None and self._is_main_commit[parent_idx]:
-                    fork_parent_idx = parent_idx
-                    parent_y = self._get_commit_y(parent_idx)
-                    
-                    # Draw fork: vertical line down from branch, then S-curve to main
-                    # (Mirror of the merge curve)
-                    
-                    # Vertical line from branch node down toward fork point
-                    curve_start_y = branch_y + (parent_y - branch_y) * 0.3
-                    painter.drawLine(branch_x, branch_y, branch_x, int(curve_start_y))
-                    
-                    # Smooth S-curve from vertical line to parent NODE
-                    path = QPainterPath()
-                    path.moveTo(branch_x, curve_start_y)
-                    path.cubicTo(
-                        branch_x, parent_y,        # First control (vertical toward parent)
-                        (GRAPH_MAIN_X + branch_x) / 2, parent_y,  # Second control (horizontal)
-                        GRAPH_MAIN_X, parent_y     # End point (parent node)
-                    )
-                    painter.drawPath(path)
-            
-            # Find merge point (commit that has this as a parent)
-            for i, commit in enumerate(self._commits):
-                commit_parents = commit.get("parents", [])
-                if len(commit_parents) >= 2 and branch_commit.get("hash") in commit_parents:
-                    if self._is_main_commit[i]:
-                        merge_y = self._get_commit_y(i)
-                        
-                        # Draw vertical line from branch node up toward merge
-                        # Stop where the curve will begin
-                        curve_start_y = merge_y + (branch_y - merge_y) * 0.3
-                        painter.drawLine(branch_x, branch_y, branch_x, int(curve_start_y))
-                        
-                        # Draw smooth curve from vertical line into merge NODE
+        hash_to_idx = {c["hash"]: i for i, c in enumerate(self._commits)}
+
+        # Pen for main lane (lane 0) — solid
+        main_pen = QPen(QColor(GRAPH_COLOR))
+        main_pen.setWidth(2)
+
+        # Pen for branch lanes — dashed
+        branch_color = QColor(GRAPH_COLOR)
+        branch_color.setAlphaF(0.6)
+        branch_pen = QPen(branch_color)
+        branch_pen.setWidth(2)
+        branch_pen.setDashPattern([4, 3])
+
+        for i, commit in enumerate(self._commits):
+            my_lane = self._lanes[i]
+            my_x = self._lane_x(my_lane)
+            my_y = self._get_commit_y(i)
+
+            for parent_hash in commit.get("parents", []):
+                parent_idx = hash_to_idx.get(parent_hash)
+                if parent_idx is None:
+                    continue
+
+                parent_lane = self._lanes[parent_idx]
+                parent_x = self._lane_x(parent_lane)
+                parent_y = self._get_commit_y(parent_idx)
+
+                if my_lane == parent_lane:
+                    # Same lane — solid if main, dashed if branch
+                    painter.setPen(main_pen if my_lane == 0 else branch_pen)
+                    painter.drawLine(my_x, my_y, parent_x, parent_y)
+                else:
+                    # Cross-lane connection:
+                    # Curve occupies exactly one row of vertical space,
+                    # straight vertical segments fill the rest.
+                    painter.setPen(branch_pen)
+
+                    # Determine curve direction
+                    # "fork out" = child on main (lane 0), parent on branch
+                    # "merge in" = child on main, second parent on branch
+                    # Either way: curve is one row high, anchored to the
+                    # end closer to the other lane's commit.
+
+                    row_h = GRAPH_ROW_HEIGHT
+
+                    if parent_y - my_y <= row_h:
+                        # Adjacent rows — just draw the curve directly
                         path = QPainterPath()
-                        path.moveTo(branch_x, curve_start_y)
-                        ctrl_x = (GRAPH_MAIN_X + branch_x) / 2
-                        path.cubicTo(
-                            branch_x, merge_y,     # First control (vertical toward merge)
-                            ctrl_x, merge_y,       # Second control (horizontal to merge)
-                            GRAPH_MAIN_X, merge_y  # End point (merge node)
-                        )
+                        path.moveTo(my_x, my_y)
+                        mid_y = (my_y + parent_y) / 2
+                        path.cubicTo(my_x, mid_y, parent_x, mid_y, parent_x, parent_y)
+                        painter.drawPath(path)
+                    else:
+                        # Multiple rows apart:
+                        # 1) Straight vertical on child's lane down to one row above parent
+                        # 2) Curve spanning one row to switch lanes
+                        # 3) (Parent lane straight segment if needed — handled by other connections)
+
+                        curve_top_y = parent_y - row_h
+
+                        # Vertical segment on child's lane
+                        if curve_top_y > my_y:
+                            painter.drawLine(my_x, my_y, my_x, int(curve_top_y))
+
+                        # Curve from child's lane to parent's lane (one row)
+                        path = QPainterPath()
+                        path.moveTo(my_x, curve_top_y)
+                        mid_y = (curve_top_y + parent_y) / 2
+                        path.cubicTo(my_x, mid_y, parent_x, mid_y, parent_x, parent_y)
                         painter.drawPath(path)
 
     def _draw_commit(self, painter, index: int, commit: dict, assets: dict):
@@ -1153,12 +1146,10 @@ class CommitGraphWidget(QWidget):
         if message.startswith("giteo: "):
             message = message[7:]
 
-        # Position: main commits on left, branch commits offset right
-        x = self._get_commit_x(index)
+        x = self._lane_x(self._lanes[index])
         y = self._get_commit_y(index)
 
-        # Draw node using SVG asset
-        # HEAD commit: ring (outline), All others: filled
+        # Draw node
         node_rect = QRect(
             x - GRAPH_NODE_SIZE // 2,
             y - GRAPH_NODE_SIZE // 2,
@@ -1170,7 +1161,6 @@ class CommitGraphWidget(QWidget):
         if asset_key in assets:
             assets[asset_key].render(painter, node_rect)
         else:
-            # Fallback: draw circle with QPainter
             color = QColor(GRAPH_COLOR)
             if is_head:
                 painter.setPen(QPen(color, 2))
@@ -1181,18 +1171,16 @@ class CommitGraphWidget(QWidget):
                 painter.setBrush(QBrush(color))
             painter.drawEllipse(node_rect)
 
-        # Text always starts after the branch line (rightmost position)
-        # This ensures text never overlaps with branch lines
-        text_x = GRAPH_BRANCH_X + GRAPH_NODE_SIZE + 12
-        
-        # Draw full commit message (no truncation)
-        painter.setPen(QColor(TEXT_DARK))  # Grey color for message
+        # Text starts after the rightmost possible lane
+        text_x = self._lane_x(max(self._max_lanes, 2)) + GRAPH_NODE_SIZE
+
+        # Draw commit message
+        painter.setPen(QColor(TEXT_DARK))
         painter.setFont(QFont("SF Pro Display", 11))
         painter.drawText(text_x, y + 4, message)
-        
+
         # Only draw branch pill for HEAD commit
         if is_head:
-            # Use QFontMetrics for accurate message width
             fm = QFontMetrics(QFont("SF Pro Display", 11))
             msg_width = fm.horizontalAdvance(message) + 10
             pill_x = text_x + msg_width
@@ -1239,8 +1227,23 @@ class CommitGraphSection(QWidget):
         scroll = QScrollArea()
         scroll.setWidgetResizable(True)
         scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
-        scroll.setVerticalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
-        scroll.setStyleSheet("QScrollArea { border: none; background: transparent; }")
+        scroll.setVerticalScrollBarPolicy(Qt.ScrollBarAsNeeded)
+        scroll.setStyleSheet("""
+            QScrollArea { border: none; background: transparent; }
+            QScrollBar:vertical {
+                background: transparent;
+                width: 6px;
+                margin: 0;
+            }
+            QScrollBar::handle:vertical {
+                background: rgba(255,180,99,0.3);
+                border-radius: 3px;
+                min-height: 20px;
+            }
+            QScrollBar::add-line:vertical, QScrollBar::sub-line:vertical {
+                height: 0;
+            }
+        """)
         scroll.setMinimumHeight(350)
 
         self._graph_widget = CommitGraphWidget()
@@ -1489,7 +1492,7 @@ class GiteoPanel(QMainWindow):
 
     def refresh_commits(self):
         _log("Refreshing commit graph...")
-        self._run_async({"action": "get_commit_graph", "limit": 20}, self._on_commits_result)
+        self._run_async({"action": "get_commit_graph", "limit": 0}, self._on_commits_result)
 
     def _on_commits_result(self, result):
         try:
