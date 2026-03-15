@@ -59,6 +59,19 @@ SVG_LOGO = """<svg width="24" height="24" viewBox="0 0 24 24" fill="none">
   <circle cx="12" cy="12" r="1.5" fill="{color}"/>
 </svg>"""
 
+# Group 13.svg — header logo (dot pattern)
+SVG_GROUP_13 = """<svg width="12" height="12" viewBox="0 0 12 12" fill="none" xmlns="http://www.w3.org/2000/svg">
+<path d="M4.65215 1.32895C4.98041 1.89254 4.78561 2.61319 4.21705 2.93858C3.64849 3.26397 2.92148 3.07087 2.59322 2.50728C2.26496 1.94369 2.45976 1.22304 3.02832 0.897651C3.59688 0.572264 4.3239 0.765363 4.65215 1.32895Z" fill="{color}"/>
+<path d="M9.4072 9.49295C9.73546 10.0565 9.54066 10.7772 8.9721 11.1026C8.40354 11.428 7.67653 11.2349 7.34827 10.6713C7.02001 10.1077 7.21481 9.38704 7.78337 9.06165C8.35193 8.73627 9.07895 8.92936 9.4072 9.49295Z" fill="{color}" fill-opacity="0.5"/>
+<path d="M1.28778 7.33627C1.85635 7.01091 2.58336 7.20403 2.91159 7.76763C3.23983 8.33123 3.04499 9.05188 2.47642 9.37725C1.90785 9.70261 1.18084 9.50948 0.852609 8.94588C0.524374 8.38228 0.719207 7.66163 1.28778 7.33627Z" fill="{color}" fill-opacity="0.7"/>
+<path d="M9.524 2.62307C10.0926 2.29771 10.8196 2.49084 11.1478 3.05444C11.476 3.61804 11.2812 4.33869 10.7126 4.66405C10.1441 4.98941 9.41706 4.79629 9.08883 4.23269C8.7606 3.66909 8.95543 2.94844 9.524 2.62307Z" fill="{color}" fill-opacity="0.3"/>
+<path d="M7.52281 0.304981C8.15696 0.473414 8.53329 1.11954 8.36337 1.74814C8.19345 2.37674 7.54163 2.74977 6.90748 2.58134C6.27334 2.41291 5.89701 1.76679 6.06693 1.13819C6.23685 0.509588 6.88867 0.136549 7.52281 0.304981Z" fill="{color}" fill-opacity="0.2"/>
+<path d="M5.09293 9.41893C5.72707 9.58737 6.1034 10.2335 5.93348 10.8621C5.76356 11.4907 5.11174 11.8637 4.4776 11.6953C3.84345 11.5269 3.46712 10.8807 3.63704 10.2521C3.80696 9.62354 4.45878 9.2505 5.09293 9.41893Z" fill="{color}" fill-opacity="0.6"/>
+<path d="M1.76355 3.47423C2.3977 3.64266 2.77403 4.28879 2.60411 4.91739C2.43419 5.54599 1.78237 5.91902 1.14822 5.75059C0.514076 5.58216 0.137746 4.93604 0.307665 4.30744C0.477584 3.67884 1.12941 3.3058 1.76355 3.47423Z" fill="{color}" fill-opacity="0.8"/>
+<path d="M10.8521 6.24974C11.4862 6.41818 11.8625 7.0643 11.6926 7.6929C11.5227 8.3215 10.8709 8.69454 10.2367 8.5261C9.60258 8.35767 9.22625 7.71155 9.39617 7.08295C9.56608 6.45435 10.2179 6.08131 10.8521 6.24974Z" fill="{color}" fill-opacity="0.4"/>
+<path d="M8.55872 4.46151C9.37015 5.85465 8.88861 7.63605 7.48318 8.44038C6.07775 9.24471 4.28064 8.76738 3.46921 7.37425C2.65779 5.98111 3.13932 4.19971 4.54475 3.39538C5.95018 2.59105 7.7473 3.06838 8.55872 4.46151Z" fill="{color}"/>
+</svg>"""
+
 SVG_AUDIO = """<svg width="16" height="16" viewBox="0 0 16 16" fill="none">
   <path d="M3 5h2l3-3v12l-3-3H3a1 1 0 01-1-1V6a1 1 0 011-1z" fill="{color}"/>
   <path d="M11 4.5c1.5 1 2 2.5 2 3.5s-.5 2.5-2 3.5" stroke="{color}" stroke-width="1.5" stroke-linecap="round" fill="none"/>
@@ -124,12 +137,12 @@ QWidget {{
 QLabel#titleLabel {{
     color: {TEXT_PRIMARY};
     font-size: 16px;
-    font-weight: 600;
+    font-weight: 300;
 }}
 QLabel#branchLabel {{
     color: {ORANGE};
     font-size: 13px;
-    font-weight: 600;
+    font-weight: 700;
 }}
 QLabel#sectionHeader {{
     color: {TEXT_PRIMARY};
@@ -489,51 +502,139 @@ class ActionsSection(QWidget):
         super().__init__(parent)
 
         layout = QVBoxLayout(self)
-        layout.setSpacing(8)
+        _action_spacing = 12  # Vertical spacing between rows
+        _gap = 16  # Fixed horizontal gap between components (same for all rows)
+        layout.setSpacing(_action_spacing)
         layout.setContentsMargins(0, 0, 0, 0)
 
-        # New Branch: inline input
+        # Uniform height and right-button width for all Actions components
+        _action_height = 40
+        _right_btn_width = 105  # Create, Switch, Merge, Status all same width
+
+        # New Branch: text box flexible, Create button fixed width
         new_row = QHBoxLayout()
+        new_row.setSpacing(_gap)
+
+        new_input_frame = QFrame()
+        new_input_frame.setFixedHeight(_action_height)
+        new_input_frame.setStyleSheet(f"""
+            QFrame {{
+                background-color: {BG_PANEL};
+                border: 1px solid {BORDER};
+                border-radius: 3px;
+            }}
+        """)
+        new_input_frame.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
+        new_input_layout = QHBoxLayout(new_input_frame)
+        new_input_layout.setContentsMargins(6, 4, 6, 4)
+        new_input_layout.setSpacing(0)
+
         self._new_input = QLineEdit()
         self._new_input.setPlaceholderText("New branch name...")
         self._new_input.setStyleSheet(f"""
-            QLineEdit {{ background-color: {BG_INPUT}; color: {TEXT_PRIMARY};
-                border: 1px solid {BORDER}; border-radius: 4px; padding: 6px; }}
+            QLineEdit {{
+                background-color: {BG_PANEL};
+                color: {TEXT_PRIMARY};
+                border: none;
+                border-radius: 2px;
+                padding: 6px 8px;
+                font-size: 13px;
+                min-width: 0;
+            }}
+            QLineEdit:focus {{
+                outline: none;
+            }}
         """)
-        new_row.addWidget(self._new_input)
+        new_input_layout.addWidget(self._new_input)
+
+        new_row.addWidget(new_input_frame, stretch=1)
         self._new_btn = QPushButton("Create")
         self._new_btn.setObjectName("primaryBtn")
+        self._new_btn.setFixedSize(_right_btn_width, _action_height)
         self._new_btn.clicked.connect(self._on_new_branch_click)
         new_row.addWidget(self._new_btn)
         layout.addLayout(new_row)
 
-        # Switch Branch: combo + button
+        # Switch Branch: combo and button equal length, same gap as row 4
         switch_row = QHBoxLayout()
+        switch_row.setSpacing(_gap)
         self._switch_combo = QComboBox()
-        self._switch_combo.setMinimumWidth(120)
-        switch_row.addWidget(self._switch_combo)
+        self._switch_combo.setFixedHeight(_action_height)
+        self._switch_combo.setMinimumWidth(_right_btn_width)
+        self._switch_combo.setStyleSheet(f"""
+            QComboBox {{
+                background-color: {ORANGE};
+                color: {TEXT_BLACK};
+                border: 1px solid {BORDER};
+                border-radius: 3px;
+                padding: 6px 12px;
+                font-size: 13px;
+                font-weight: 600;
+            }}
+            QComboBox::drop-down {{
+                border: none;
+                width: 20px;
+            }}
+            QComboBox::down-arrow {{
+                image: none;
+                border-left: 1px solid rgba(0,0,0,0.2);
+                width: 20px;
+            }}
+        """)
+        switch_row.addWidget(self._switch_combo, stretch=1)
         self._switch_btn = QPushButton("Switch")
+        self._switch_btn.setFixedHeight(_action_height)
+        self._switch_btn.setMinimumWidth(_right_btn_width)
         self._switch_btn.clicked.connect(self._on_switch_click)
-        switch_row.addWidget(self._switch_btn)
+        switch_row.addWidget(self._switch_btn, stretch=1)
         layout.addLayout(switch_row)
 
-        # Merge Branch: combo + button
+        # Merge Branch: combo and button equal length, same gap as row 4
         merge_row = QHBoxLayout()
+        merge_row.setSpacing(_gap)
         self._merge_combo = QComboBox()
-        self._merge_combo.setMinimumWidth(120)
-        merge_row.addWidget(self._merge_combo)
+        self._merge_combo.setFixedHeight(_action_height)
+        self._merge_combo.setMinimumWidth(_right_btn_width)
+        self._merge_combo.setStyleSheet(f"""
+            QComboBox {{
+                background-color: {ORANGE};
+                color: {TEXT_BLACK};
+                border: 1px solid {BORDER};
+                border-radius: 3px;
+                padding: 6px 12px;
+                font-size: 13px;
+                font-weight: 600;
+            }}
+            QComboBox::drop-down {{
+                border: none;
+                width: 20px;
+            }}
+            QComboBox::down-arrow {{
+                image: none;
+                border-left: 1px solid rgba(0,0,0,0.2);
+                width: 20px;
+            }}
+        """)
+        merge_row.addWidget(self._merge_combo, stretch=1)
         self._merge_btn = QPushButton("Merge")
+        self._merge_btn.setFixedHeight(_action_height)
+        self._merge_btn.setMinimumWidth(_right_btn_width)
         self._merge_btn.clicked.connect(self._on_merge_click)
-        merge_row.addWidget(self._merge_btn)
+        merge_row.addWidget(self._merge_btn, stretch=1)
         layout.addLayout(merge_row)
 
-        # Push, Pull, Status
+        # Push, Pull, Status — same width, same gap between each, right-aligned
         btn_row = QHBoxLayout()
+        btn_row.setSpacing(_gap)
+        btn_row.addStretch()
         self._push_btn = QPushButton("Push")
+        self._push_btn.setFixedSize(_right_btn_width, _action_height)
         self._push_btn.clicked.connect(self.push_requested.emit)
         self._pull_btn = QPushButton("Pull")
+        self._pull_btn.setFixedSize(_right_btn_width, _action_height)
         self._pull_btn.clicked.connect(self.pull_requested.emit)
         self._status_btn = QPushButton("Status")
+        self._status_btn.setFixedSize(_right_btn_width, _action_height)
         self._status_btn.clicked.connect(self.status_requested.emit)
         btn_row.addWidget(self._push_btn)
         btn_row.addWidget(self._pull_btn)
@@ -1032,9 +1133,9 @@ class GiteoPanel(QMainWindow):
         close_btn.clicked.connect(self.close)
         header.addWidget(close_btn, alignment=Qt.AlignVCenter)
 
-        # Logo
+        # Logo (Group 13.svg) — next to X
         logo_label = QLabel()
-        logo_label.setPixmap(svg_to_pixmap(SVG_LOGO, ORANGE, 24))
+        logo_label.setPixmap(svg_to_pixmap(SVG_GROUP_13, TEXT_PRIMARY, 24))
         logo_label.setFixedSize(24, 24)
         header.addWidget(logo_label, alignment=Qt.AlignVCenter)
 
