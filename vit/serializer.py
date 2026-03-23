@@ -434,21 +434,45 @@ def _frame_to_tc(frame: int, start_frame: int, start_tc: str, fps: float) -> str
 def _read_color_adjustments(clip) -> dict:
     """Read clip-level color adjustments via GetProperty().
 
-    NOTE: On Resolve Free, GetProperty() for color properties (Contrast,
-    Saturation, etc.) returns None. These values are only readable on
-    Resolve Studio. The function still tries in case the user has Studio.
+    NOTE: On Resolve Free, GetProperty() for color properties returns None.
+    These values are only readable on Resolve Studio. The function still tries
+    in case the user has Studio.
     """
     adjustments = {}
 
-    props = {
+    scalar_props = {
         "contrast": "Contrast",
         "saturation": "Saturation",
         "hue": "Hue",
         "pivot": "Pivot",
         "color_boost": "ColorBoost",
+        # White balance
+        "temperature": "TemperatureMired",
+        "tint": "Tint",
+        # Sharpness / NR
+        "sharpness": "Sharpness",
+        "noise_reduction_luma": "NoiseReductionLuma",
+        "noise_reduction_chroma": "NoiseReductionChroma",
+        # Per-channel primary wheels
+        "lift_r": "LiftR",
+        "lift_g": "LiftG",
+        "lift_b": "LiftB",
+        "lift_m": "LiftM",
+        "gamma_r": "GammaR",
+        "gamma_g": "GammaG",
+        "gamma_b": "GammaB",
+        "gamma_m": "GammaM",
+        "gain_r": "GainR",
+        "gain_g": "GainG",
+        "gain_b": "GainB",
+        "gain_m": "GainM",
+        "offset_r": "OffsetR",
+        "offset_g": "OffsetG",
+        "offset_b": "OffsetB",
+        "offset_m": "OffsetM",
     }
 
-    for adj_key, prop_name in props.items():
+    for adj_key, prop_name in scalar_props.items():
         try:
             val = clip.GetProperty(prop_name)
             if val is not None:
@@ -539,6 +563,27 @@ def _read_clip_grade_info(clip) -> Tuple[int, List[ColorNodeGrade], str]:
             node.pivot = clip_adjustments.get("pivot")
             node.hue = clip_adjustments.get("hue")
             node.color_boost = clip_adjustments.get("color_boost")
+            node.temperature = clip_adjustments.get("temperature")
+            node.tint = clip_adjustments.get("tint")
+            node.sharpness = clip_adjustments.get("sharpness")
+            node.noise_reduction_luma = clip_adjustments.get("noise_reduction_luma")
+            node.noise_reduction_chroma = clip_adjustments.get("noise_reduction_chroma")
+            node.lift_r = clip_adjustments.get("lift_r")
+            node.lift_g = clip_adjustments.get("lift_g")
+            node.lift_b = clip_adjustments.get("lift_b")
+            node.lift_m = clip_adjustments.get("lift_m")
+            node.gamma_r = clip_adjustments.get("gamma_r")
+            node.gamma_g = clip_adjustments.get("gamma_g")
+            node.gamma_b = clip_adjustments.get("gamma_b")
+            node.gamma_m = clip_adjustments.get("gamma_m")
+            node.gain_r = clip_adjustments.get("gain_r")
+            node.gain_g = clip_adjustments.get("gain_g")
+            node.gain_b = clip_adjustments.get("gain_b")
+            node.gain_m = clip_adjustments.get("gain_m")
+            node.offset_r = clip_adjustments.get("offset_r")
+            node.offset_g = clip_adjustments.get("offset_g")
+            node.offset_b = clip_adjustments.get("offset_b")
+            node.offset_m = clip_adjustments.get("offset_m")
 
         nodes.append(node)
 

@@ -13,7 +13,10 @@ from .core import (
     git_add,
     git_branch,
     git_checkout,
+    git_clone,
     git_commit,
+    git_config_get,
+    git_config_set,
     git_current_branch,
     git_diff,
     git_init,
@@ -25,6 +28,10 @@ from .core import (
     git_merge_base,
     git_pull,
     git_push,
+    git_push_set_upstream,
+    git_remote_add,
+    git_remote_list,
+    git_remote_remove,
     git_revert,
     git_show_file,
     git_status,
@@ -75,10 +82,27 @@ def cmd_add(args):
     print("  Staged timeline and asset files.")
 
 
+def _ensure_git_identity(project_dir: str) -> None:
+    """Prompt for git user.name/email if not set, so commits are attributed correctly."""
+    name = git_config_get(project_dir, "user.name")
+    email = git_config_get(project_dir, "user.email")
+    if not name or not email:
+        print("  Git identity not set. This ensures commits show who made each change.")
+        if not name:
+            name = input("  Your name: ").strip()
+            if name:
+                git_config_set(project_dir, "user.name", name)
+        if not email:
+            email = input("  Your email: ").strip()
+            if email:
+                git_config_set(project_dir, "user.email", email)
+
+
 def cmd_commit(args):
     """Stage and commit current state."""
     project_dir = _require_project()
 
+    _ensure_git_identity(project_dir)
     git_add(project_dir, ["timeline/", "assets/", ".vit/", ".gitignore"])
 
     message = args.message
@@ -522,6 +546,102 @@ def cmd_install_resolve(args):
     print("  Restart Resolve, then run Workspace > Scripts > Vit for the unified panel.")
 
 
+def cmd_clone(args):
+    """Clone a remote vit repo to a local directory."""
+    url = args.url
+    dest = args.directory or os.path.basename(url.rstrip("/").rstrip(".git"))
+    if os.path.exists(dest):
+        print(f"  Error: '{dest}' already exists.")
+        sys.exit(1)
+    print(f"  Cloning {url} into '{dest}'...")
+    try:
+        git_clone(url, dest)
+    except GitError as e:
+        print(f"  Error: {e}")
+        sys.exit(1)
+    print(f"  Cloned into '{dest}'")
+    print(f"  Note: Media files are not included. Open the project in Resolve and relink any offline clips.")
+    print(f"  Run 'vit checkout main' inside '{dest}' to restore the latest timeline.")
+
+
+def cmd_remote(args):
+    """Manage remote repositories."""
+    project_dir = _require_project()
+
+    if args.remote_cmd == "add":
+        git_remote_add(project_dir, args.name, args.url)
+        print(f"  Added remote '{args.name}' → {args.url}")
+
+    elif args.remote_cmd == "list" or args.remote_cmd is None:
+        remotes = git_remote_list(project_dir)
+        if remotes:
+            for r in remotes:
+                print(f"  {r['name']}\t{r['url']}")
+        else:
+            print("  No remotes configured. Run 'vit collab setup' to add one.")
+
+    elif args.remote_cmd == "remove":
+        git_remote_remove(project_dir, args.name)
+        print(f"  Removed remote '{args.name}'")
+
+
+def cmd_collab_setup(args):
+    """Interactive wizard to set up collaboration with a remote repository."""
+    project_dir = _require_project()
+
+    print("  Vit Collaboration Setup")
+    print("  ─────────────────────────────────────")
+
+    # Check existing remotes
+    remotes = git_remote_list(project_dir)
+    if remotes:
+        print(f"  Existing remotes:")
+        for r in remotes:
+            print(f"    {r['name']}  {r['url']}")
+        print()
+
+    url = input("  Remote URL (e.g. https://github.com/you/film.git): ").strip()
+    if not url:
+        print("  Cancelled.")
+        return
+
+    remote_name = "origin"
+    if remotes:
+        remote_name = input("  Remote name [origin]: ").strip() or "origin"
+
+    # Set identity if needed
+    _ensure_git_identity(project_dir)
+
+    # Add remote if not already present
+    existing_names = {r["name"] for r in remotes}
+    if remote_name not in existing_names:
+        git_remote_add(project_dir, remote_name, url)
+        print(f"  Added remote '{remote_name}'")
+
+    # Push
+    current_branch = git_current_branch(project_dir)
+    print(f"  Pushing '{current_branch}' to {remote_name}...")
+    try:
+        output = git_push_set_upstream(project_dir, remote_name, current_branch)
+        if output.strip():
+            print(output)
+    except GitError as e:
+        print(f"  Push failed: {e}")
+        print("  You may need to authenticate or create the remote repo first.")
+        return
+
+    print()
+    print("  Setup complete!")
+    print(f"  Share this command with collaborators:")
+    print(f"    vit clone {url}")
+    print()
+    print("  Each collaborator should:")
+    print("    1. Run: vit clone <url>")
+    print("    2. Open the project folder in DaVinci Resolve")
+    print("    3. Relink any offline media files")
+    print("    4. Create their own branch: vit branch <name>")
+
+
 def cmd_uninstall_resolve(args):
     """Remove Resolve plugin symlinks."""
     # Include legacy script names so old installs get cleaned up
@@ -624,6 +744,33 @@ def main():
     # validate
     p_validate = subparsers.add_parser("validate", help="Validate timeline consistency")
     p_validate.set_defaults(func=cmd_validate)
+
+    # clone
+    p_clone = subparsers.add_parser("clone", help="Clone a remote vit project")
+    p_clone.add_argument("url", help="Remote URL to clone")
+    p_clone.add_argument("directory", nargs="?", help="Target directory (default: repo name)")
+    p_clone.set_defaults(func=cmd_clone)
+
+    # remote
+    p_remote = subparsers.add_parser("remote", help="Manage remote repositories")
+    remote_sub = p_remote.add_subparsers(dest="remote_cmd")
+    p_remote.set_defaults(func=cmd_remote, remote_cmd=None)
+
+    p_remote_add = remote_sub.add_parser("add", help="Add a remote")
+    p_remote_add.add_argument("name", help="Remote name (e.g. origin)")
+    p_remote_add.add_argument("url", help="Remote URL")
+
+    p_remote_list = remote_sub.add_parser("list", help="List remotes")
+
+    p_remote_rm = remote_sub.add_parser("remove", help="Remove a remote")
+    p_remote_rm.add_argument("name", help="Remote name to remove")
+
+    # collab
+    p_collab = subparsers.add_parser("collab", help="Collaboration setup")
+    collab_sub = p_collab.add_subparsers(dest="collab_cmd")
+    p_collab_setup = collab_sub.add_parser("setup", help="Guided remote setup wizard")
+    p_collab_setup.set_defaults(func=cmd_collab_setup)
+    p_collab.set_defaults(func=lambda a: p_collab.print_help())
 
     # install-resolve
     p_install = subparsers.add_parser("install-resolve", help="Install scripts into DaVinci Resolve")

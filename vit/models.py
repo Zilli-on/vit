@@ -408,6 +408,33 @@ class ColorNodeGrade:
     hue: Optional[float] = None
     color_boost: Optional[float] = None
 
+    # Per-channel primary wheel values (R/G/B/M per wheel)
+    lift_r: Optional[float] = None
+    lift_g: Optional[float] = None
+    lift_b: Optional[float] = None
+    lift_m: Optional[float] = None
+    gamma_r: Optional[float] = None
+    gamma_g: Optional[float] = None
+    gamma_b: Optional[float] = None
+    gamma_m: Optional[float] = None
+    gain_r: Optional[float] = None
+    gain_g: Optional[float] = None
+    gain_b: Optional[float] = None
+    gain_m: Optional[float] = None
+    offset_r: Optional[float] = None
+    offset_g: Optional[float] = None
+    offset_b: Optional[float] = None
+    offset_m: Optional[float] = None
+
+    # White balance
+    temperature: Optional[float] = None
+    tint: Optional[float] = None
+
+    # Sharpness and noise reduction
+    sharpness: Optional[float] = None
+    noise_reduction_luma: Optional[float] = None
+    noise_reduction_chroma: Optional[float] = None
+
     # Tool names in this node (e.g., ["Primary Offset"]) — for change detection
     tools: Optional[List[str]] = None
 
@@ -417,6 +444,12 @@ class ColorNodeGrade:
         for key in ["slope", "offset", "power", "saturation",
                      "lift", "gamma", "gain", "color_offset",
                      "contrast", "pivot", "hue", "color_boost",
+                     "lift_r", "lift_g", "lift_b", "lift_m",
+                     "gamma_r", "gamma_g", "gamma_b", "gamma_m",
+                     "gain_r", "gain_g", "gain_b", "gain_m",
+                     "offset_r", "offset_g", "offset_b", "offset_m",
+                     "temperature", "tint", "sharpness",
+                     "noise_reduction_luma", "noise_reduction_chroma",
                      "tools"]:
             val = getattr(self, key)
             if val is not None:
@@ -441,6 +474,27 @@ class ColorNodeGrade:
             pivot=d.get("pivot"),
             hue=d.get("hue"),
             color_boost=d.get("color_boost"),
+            lift_r=d.get("lift_r"),
+            lift_g=d.get("lift_g"),
+            lift_b=d.get("lift_b"),
+            lift_m=d.get("lift_m"),
+            gamma_r=d.get("gamma_r"),
+            gamma_g=d.get("gamma_g"),
+            gamma_b=d.get("gamma_b"),
+            gamma_m=d.get("gamma_m"),
+            gain_r=d.get("gain_r"),
+            gain_g=d.get("gain_g"),
+            gain_b=d.get("gain_b"),
+            gain_m=d.get("gain_m"),
+            offset_r=d.get("offset_r"),
+            offset_g=d.get("offset_g"),
+            offset_b=d.get("offset_b"),
+            offset_m=d.get("offset_m"),
+            temperature=d.get("temperature"),
+            tint=d.get("tint"),
+            sharpness=d.get("sharpness"),
+            noise_reduction_luma=d.get("noise_reduction_luma"),
+            noise_reduction_chroma=d.get("noise_reduction_chroma"),
             tools=d.get("tools"),
         )
 

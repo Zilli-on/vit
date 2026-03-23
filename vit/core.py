@@ -255,6 +255,70 @@ def find_project_root(start_dir: Optional[str] = None) -> Optional[str]:
         current = parent
 
 
+def git_remote_add(project_dir: str, name: str, url: str) -> None:
+    """Add a remote."""
+    _run(["remote", "add", name, url], cwd=project_dir)
+
+
+def git_remote_list(project_dir: str) -> List[dict]:
+    """List remotes. Returns list of {name, url}."""
+    result = _run(["remote", "-v"], cwd=project_dir, check=False)
+    remotes = {}
+    for line in result.stdout.splitlines():
+        parts = line.split()
+        if len(parts) >= 2 and "(fetch)" in line:
+            remotes[parts[0]] = parts[1]
+    return [{"name": n, "url": u} for n, u in remotes.items()]
+
+
+def git_remote_remove(project_dir: str, name: str) -> None:
+    """Remove a remote."""
+    _run(["remote", "remove", name], cwd=project_dir)
+
+
+def git_clone(url: str, dest_dir: str) -> None:
+    """Clone a remote vit repo."""
+    result = subprocess.run(
+        ["git", "clone", url, dest_dir],
+        capture_output=True,
+        text=True,
+    )
+    if result.returncode != 0:
+        detail = result.stderr.strip() or result.stdout.strip()
+        raise GitError(f"git clone failed: {detail}")
+
+    # Ensure .vit/config.json exists so the cloned dir is recognized as a vit project
+    import json
+    vit_dir = os.path.join(dest_dir, ".vit")
+    config_path = os.path.join(vit_dir, "config.json")
+    if not os.path.exists(config_path):
+        os.makedirs(vit_dir, exist_ok=True)
+        config = {"version": "0.1.0", "nle": "resolve"}
+        with open(config_path, "w") as f:
+            json.dump(config, f, indent=2, sort_keys=True)
+
+
+def git_config_get(project_dir: str, key: str) -> Optional[str]:
+    """Get a git config value for the project."""
+    result = _run(["config", key], cwd=project_dir, check=False)
+    val = result.stdout.strip()
+    return val if val else None
+
+
+def git_config_set(project_dir: str, key: str, value: str) -> None:
+    """Set a git config value for the project."""
+    _run(["config", key, value], cwd=project_dir)
+
+
+def git_push_set_upstream(project_dir: str, remote: str = "origin", branch: Optional[str] = None) -> str:
+    """Push and set upstream tracking branch."""
+    if branch is None:
+        branch = git_current_branch(project_dir)
+    args = ["push", "-u", remote, branch]
+    result = _run(args, cwd=project_dir)
+    return result.stdout + result.stderr
+
+
 def git_log_with_changes(project_dir: str, max_count: int = 20) -> List[dict]:
     """Get commit log with file change information for each commit.
 

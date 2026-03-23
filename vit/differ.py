@@ -206,6 +206,25 @@ def _format_wheel(wheel: dict) -> str:
     return " ".join(parts)
 
 
+def _diff_wheel_channels(
+    old_node: dict, new_node: dict, prefix: str, wheel: str, label: str
+) -> List[str]:
+    """Diff per-channel values for a color wheel (e.g. lift R/G/B/M)."""
+    channels = [("r", "R"), ("g", "G"), ("b", "B"), ("m", "M")]
+    changed = []
+    for ch_key, ch_label in channels:
+        key = f"{wheel}_{ch_key}"
+        old_v = old_node.get(key)
+        new_v = new_node.get(key)
+        if old_v != new_v and (old_v is not None or new_v is not None):
+            old_s = f"{old_v:+.4f}" if old_v is not None else "default"
+            new_s = f"{new_v:+.4f}" if new_v is not None else "default"
+            changed.append(f"{ch_label}: {old_s} → {new_s}")
+    if changed:
+        return [f"{prefix}: {label}  " + "  ".join(changed)]
+    return []
+
+
 def _diff_node_values(old_node: dict, new_node: dict, item_id: str, node_idx: int) -> List[str]:
     """Diff color values within a single node."""
     lines = []
@@ -230,7 +249,7 @@ def _diff_node_values(old_node: dict, new_node: dict, item_id: str, node_idx: in
             new_s = f"{new_v:.3f}" if new_v is not None else "default"
             lines.append(f"{prefix}: {label} {old_s} → {new_s}")
 
-    # Color wheels
+    # Color wheels (legacy dict form)
     for key, label in [("lift", "Lift"), ("gamma", "Gamma"),
                         ("gain", "Gain"), ("color_offset", "Offset")]:
         old_v = old_node.get(key)
@@ -238,6 +257,33 @@ def _diff_node_values(old_node: dict, new_node: dict, item_id: str, node_idx: in
         if old_v != new_v and (old_v is not None or new_v is not None):
             old_s = _format_wheel(old_v) if old_v else "default"
             new_s = _format_wheel(new_v) if new_v else "default"
+            lines.append(f"{prefix}: {label} {old_s} → {new_s}")
+
+    # Per-channel wheel values (richer format)
+    for wheel_key, wheel_label in [
+        ("lift", "Lift"), ("gamma", "Gamma"), ("gain", "Gain"), ("offset", "Offset")
+    ]:
+        lines.extend(_diff_wheel_channels(old_node, new_node, prefix, wheel_key, wheel_label))
+
+    # White balance
+    for key, label in [("temperature", "Temperature"), ("tint", "Tint")]:
+        old_v = old_node.get(key)
+        new_v = new_node.get(key)
+        if old_v != new_v and (old_v is not None or new_v is not None):
+            old_s = f"{old_v:.0f}" if old_v is not None else "default"
+            new_s = f"{new_v:.0f}" if new_v is not None else "default"
+            suffix = "K" if key == "temperature" else ""
+            lines.append(f"{prefix}: {label} {old_s}{suffix} → {new_s}{suffix}")
+
+    # Sharpness and noise reduction
+    for key, label in [("sharpness", "Sharpness"),
+                        ("noise_reduction_luma", "NR Luma"),
+                        ("noise_reduction_chroma", "NR Chroma")]:
+        old_v = old_node.get(key)
+        new_v = new_node.get(key)
+        if old_v != new_v and (old_v is not None or new_v is not None):
+            old_s = f"{old_v:.3f}" if old_v is not None else "default"
+            new_s = f"{new_v:.3f}" if new_v is not None else "default"
             lines.append(f"{prefix}: {label} {old_s} → {new_s}")
 
     # LUT changes
