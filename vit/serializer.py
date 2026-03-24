@@ -698,8 +698,6 @@ def _export_grade_stills(timeline, project, project_dir: str,
                     if drx_export_works is None:
                         # First failure — ExportStills is not available
                         drx_export_works = False
-                        print("  Note: DRX export unavailable (Resolve Studio required).")
-                        print("  Color tracked via node structure and clip properties.")
 
                 try:
                     album.DeleteStills([still])
@@ -755,7 +753,6 @@ def _export_grade_luts(timeline, project_dir: str,
     lut_export_works = None  # tri-state: None=untested, True/False
 
     track_count = timeline.GetTrackCount("video")
-    print(f"  [LUT export] Starting — {track_count} video track(s), grades_dir={grades_dir}")
 
     for track_idx in range(1, track_count + 1):
         clips = timeline.GetItemListInTrack("video", track_idx)
@@ -774,8 +771,6 @@ def _export_grade_luts(timeline, project_dir: str,
             if not callable(export_lut):
                 if lut_export_works is None:
                     lut_export_works = False
-                    print(f"  [LUT export] ExportLUT not available on TimelineItem (type={type(clip).__name__})")
-                    print(f"  [LUT export] Available methods: {[m for m in dir(clip) if not m.startswith('_') and callable(getattr(clip, m, None))]}")
                 break
 
             try:
@@ -783,20 +778,15 @@ def _export_grade_luts(timeline, project_dir: str,
                 # Use 33-point cube (good balance of accuracy vs file size)
                 success = export_lut(1, cube_path)
                 file_exists = os.path.exists(cube_path)
-                print(f"  [LUT export] {item_id}: ExportLUT returned {success!r}, file exists={file_exists}")
 
                 if success and file_exists:
                     grades[item_id].lut_file = f"{item_id}.cube"
                     if lut_export_works is None:
                         lut_export_works = True
-                        print(f"  [LUT export] Success! LUT export working.")
                 else:
                     if lut_export_works is None:
                         lut_export_works = False
-                        print("  Note: LUT export unavailable on this Resolve version.")
-                        print("  Color tracked via node structure and metadata only.")
-            except Exception as e:
-                print(f"  [LUT export] {item_id}: Exception — {type(e).__name__}: {e}")
+            except Exception:
                 if lut_export_works is None:
                     lut_export_works = False
 

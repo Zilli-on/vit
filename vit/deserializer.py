@@ -1281,16 +1281,12 @@ def _apply_color(timeline, color_grades: Dict[str, ColorGrade],
     grades_dir = os.path.join(project_dir, "timeline", "grades") if project_dir else ""
     saved_page = None
 
-    print(f"  [Color restore] Starting — {len(color_grades)} grade(s), grades_dir={grades_dir}")
-    print(f"  [Color restore] resolve_app={'yes' if resolve_app else 'NO'}, project_dir={project_dir}")
-
     if resolve_app:
         try:
             saved_page = resolve_app.GetCurrentPage()
             if saved_page != "color":
                 resolve_app.OpenPage("color")
                 time.sleep(0.3)
-                print(f"  [Color restore] Switched to color page (was {saved_page})")
         except (AttributeError, TypeError):
             saved_page = None
 
@@ -1367,19 +1363,14 @@ def _apply_color(timeline, color_grades: Dict[str, ColorGrade],
                         if cdl_check and _cdl_is_identity(cdl_check):
                             preferred = media_ref_to_grade.get(media_ref)
                             if preferred and preferred is not grade:
-                                print(f"  [Color restore] {item_id}: identity grade → using non-identity from same source")
                                 grade = preferred
 
                 if not grade:
                     # No grade by item_id — fall back to any grade for same source
                     if media_ref:
                         grade = media_ref_to_grade.get(media_ref)
-                        if grade:
-                            print(f"  [Color restore] {item_id}: matched grade via media_ref (split clip)")
                 if not grade:
                     continue
-
-                print(f"  [Color restore] {item_id}: drx_file={grade.drx_file!r}, lut_file={grade.lut_file!r}, nodes={len(grade.nodes)}")
 
                 # Priority 1: DRX grade restore (complete node-based grade)
                 if grade.drx_file and grades_dir:
@@ -1387,11 +1378,8 @@ def _apply_color(timeline, color_grades: Dict[str, ColorGrade],
                     if os.path.exists(drx_path):
                         target_clip = _focus_clip_for_color_page(timeline, clip)
                         if _apply_grade_from_drx(timeline, target_clip, drx_path, item_id):
-                            print(f"  [Color restore] {item_id}: DRX restore succeeded")
                             time.sleep(0.1)
                             continue
-                    else:
-                        print(f"  Warning: Missing DRX file for {item_id}: {drx_path}")
 
                 # Priority 2: Baked LUT grade restore (.cube file)
                 if grade.lut_file and grades_dir:
@@ -1404,10 +1392,7 @@ def _apply_color(timeline, color_grades: Dict[str, ColorGrade],
                         try:
                             node_graph = target_clip.GetNodeGraph()
                             if node_graph:
-                                num_nodes_before = node_graph.GetNumNodes()
-                                reset_result = node_graph.ResetAllGrades()
-                                num_nodes_after = node_graph.GetNumNodes()
-                                print(f"  [Color restore] {item_id}: nodes before={num_nodes_before}, after ResetAllGrades={num_nodes_after}")
+                                node_graph.ResetAllGrades()
 
                                 # SetLUT requires the file to be in Resolve's LUT
                                 # search path. Copy to Resolve's user LUT directory
@@ -1419,47 +1404,34 @@ def _apply_color(timeline, color_grades: Dict[str, ColorGrade],
                                         dest = os.path.join(resolve_lut_dir, grade.lut_file)
                                         shutil.copy2(lut_path, dest)
                                         rel_path = os.path.join("vit", grade.lut_file)
-                                        set_result = node_graph.SetLUT(1, rel_path)
-                                        print(f"  [Color restore] {item_id}: SetLUT(1, '{rel_path}') returned {set_result!r}")
-                                        if set_result:
+                                        if node_graph.SetLUT(1, rel_path):
                                             lut_applied = True
-                                    except Exception as e:
-                                        print(f"  [Color restore] {item_id}: LUT dir copy/set error — {e}")
+                                    except Exception:
+                                        pass
 
                                 # Also try absolute path in case relative fails
                                 if not lut_applied:
-                                    set_result = node_graph.SetLUT(1, lut_path)
-                                    print(f"  [Color restore] {item_id}: SetLUT(1, abs_path) returned {set_result!r}")
-                                    if set_result:
+                                    if node_graph.SetLUT(1, lut_path):
                                         lut_applied = True
-                        except (AttributeError, TypeError) as e:
-                            print(f"  [Color restore] {item_id}: NodeGraph error — {type(e).__name__}: {e}")
+                        except (AttributeError, TypeError):
+                            pass
 
                         # Final fallback: parse .cube → estimate CDL → SetCDL
                         # Works well for primary color corrections (color wheels).
                         if not lut_applied:
                             cdl_dict = _parse_cube_for_cdl(lut_path)
                             if cdl_dict:
-                                # Try on both clip objects — target_clip (focused via
-                                # Color page) and the original clip from GetItemListInTrack
-                                for clip_obj, label in [(target_clip, "target_clip"), (clip, "clip")]:
+                                for clip_obj in (target_clip, clip):
                                     try:
-                                        cdl_result = clip_obj.SetCDL(cdl_dict)
-                                        print(f"  [Color restore] {item_id}: SetCDL via {label} returned {cdl_result!r}")
-                                        if cdl_result:
+                                        if clip_obj.SetCDL(cdl_dict):
                                             lut_applied = True
                                             break
-                                    except (AttributeError, TypeError) as e:
-                                        print(f"  [Color restore] {item_id}: SetCDL via {label} error — {e}")
-                            else:
-                                print(f"  [Color restore] {item_id}: Could not parse .cube for CDL")
+                                    except (AttributeError, TypeError):
+                                        pass
 
                         if lut_applied:
-                            print(f"  [Color restore] {item_id}: grade restore succeeded")
                             time.sleep(0.1)
                             continue
-                        else:
-                            print(f"  [Color restore] {item_id}: grade restore FAILED — all methods returned False")
                     else:
                         print(f"  Warning: Missing LUT file for {item_id}: {lut_path}")
 
