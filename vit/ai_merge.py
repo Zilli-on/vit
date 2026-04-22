@@ -564,7 +564,9 @@ def merge_with_ai(
 
     # Phase 2: Handle user clarifications if needed
     if analysis.needs_user_input():
-        user_answers = _prompt_user_choices(analysis)
+        from .merge_dialog import pick_dialog
+
+        user_answers = pick_dialog().show(analysis)
         if user_answers is None:
             print("  AI merge aborted.")
             return False
