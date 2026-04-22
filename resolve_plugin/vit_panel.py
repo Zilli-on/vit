@@ -30,29 +30,43 @@ _flog("--- Vit.py invoked from Resolve ---")
 _flog(f"sys.executable = {sys.executable}")
 _flog(f"sys.version    = {sys.version.split()[0]}")
 
-# Bootstrap — put the vit package root on sys.path
+# Bootstrap — put the vit package root on sys.path.
+# Two discovery strategies, tried in order:
+#   1. realpath of __file__ resolves through a symlink back to the repo
+#      (works on macOS / Linux where install-resolve uses symlinks).
+#   2. ~/.vit/package_path written by install-resolve (needed on Windows
+#      where install-resolve copies the file, so realpath returns the
+#      Edit/ dir, not the repo).
+# Upstream only used (2) when __file__ was missing entirely; that left
+# Windows users with no vit package on sys.path and the launcher import
+# silently failing.
+_root = None
 try:
     _real = os.path.realpath(__file__)
 except NameError:
     _real = None
+
 if _real:
-    _root = os.path.dirname(os.path.dirname(_real))
-    _flog(f"__file__ realpath root = {_root}")
-    if os.path.isdir(os.path.join(_root, "vit")) and _root not in sys.path:
-        sys.path.insert(0, _root)
-else:
+    _candidate = os.path.dirname(os.path.dirname(_real))
+    _flog(f"__file__ realpath root = {_candidate}")
+    if os.path.isdir(os.path.join(_candidate, "vit")):
+        _root = _candidate
+
+if _root is None:
     _pf = os.path.expanduser("~/.vit/package_path")
-    _flog(f"no __file__, checking {_pf}")
+    _flog(f"realpath did not resolve to a vit repo; checking {_pf}")
     if os.path.exists(_pf):
         with open(_pf) as _f:
-            _root = _f.read().strip()
-        _flog(f"package_path points to {_root}")
-        if (
-            _root
-            and os.path.isdir(os.path.join(_root, "vit"))
-            and _root not in sys.path
-        ):
-            sys.path.insert(0, _root)
+            _candidate = _f.read().strip()
+        _flog(f"package_path points to {_candidate}")
+        if _candidate and os.path.isdir(os.path.join(_candidate, "vit")):
+            _root = _candidate
+
+if _root and _root not in sys.path:
+    sys.path.insert(0, _root)
+    _flog(f"vit package root = {_root}")
+elif _root is None:
+    _flog("ERROR: could not locate the vit package on this machine.")
 
 # Resolve may inject 'resolve' into the script's globals when run from
 # Workspace > Scripts. Imported modules don't see it — inject into
