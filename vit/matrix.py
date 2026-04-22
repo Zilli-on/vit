@@ -102,18 +102,38 @@ def _rev_parse(project_dir: str, ref: str) -> Optional[str]:
 
 
 def _commits_behind(project_dir: str, branch: str, parent: str) -> int:
-    """How many commits on parent are not yet on branch."""
+    """How many parent commits haven't been applied (as a patch) to branch.
+
+    After `vit matrix rederive`, git cherry-pick rewrites each replayed
+    commit with a fresh hash, so a naive `git rev-list branch..parent`
+    still reports "behind". We use `git cherry` which pairs commits by
+    patch-id (content) instead of hash, so re-applied commits don't
+    count. Lines starting with `-` are parent commits already present
+    in branch (by patch-id); lines starting with `+` are the ones still
+    missing.
+    """
     result = _run(
-        ["rev-list", "--count", f"{branch}..{parent}"],
+        ["cherry", branch, parent],
         cwd=project_dir,
         check=False,
     )
     if result.returncode != 0:
-        return 0
-    try:
-        return int(result.stdout.strip())
-    except ValueError:
-        return 0
+        # Fallback: plain commit-hash count. Better than crashing.
+        fallback = _run(
+            ["rev-list", "--count", f"{branch}..{parent}"],
+            cwd=project_dir,
+            check=False,
+        )
+        try:
+            return int(fallback.stdout.strip())
+        except (ValueError, AttributeError):
+            return 0
+    missing = 0
+    for line in result.stdout.splitlines():
+        line = line.strip()
+        if line.startswith("+ "):
+            missing += 1
+    return missing
 
 
 def cmd_init(project_dir: str) -> None:

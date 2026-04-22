@@ -20,12 +20,64 @@ class ValidationIssue:
         return f"[{icon}] {self.category}: {self.message}"
 
 
+_DOMAIN_FILES = {
+    "cuts": ("timeline", "cuts.json"),
+    "color": ("timeline", "color.json"),
+    "audio": ("timeline", "audio.json"),
+    "metadata": ("timeline", "metadata.json"),
+    "effects": ("timeline", "effects.json"),
+    "markers": ("timeline", "markers.json"),
+}
+
+
+def _check_file_integrity(project_dir: str) -> List[ValidationIssue]:
+    """Flag any domain file that exists on disk but isn't valid JSON.
+
+    read_json swallows JSONDecodeError to `{}` so the downstream checks
+    don't crash. Without this probe, a corrupted file silently passes
+    validation. We separate detection from handling.
+    """
+    issues = []
+    for domain, parts in _DOMAIN_FILES.items():
+        path = os.path.join(project_dir, *parts)
+        if not os.path.exists(path):
+            continue
+        try:
+            with open(path) as f:
+                json.load(f)
+        except json.JSONDecodeError as e:
+            issues.append(
+                ValidationIssue(
+                    severity="error",
+                    category="corrupt_json",
+                    message=f"{os.path.join(*parts)} is not valid JSON: {e.msg} at line {e.lineno}",
+                    details={"domain": domain, "path": path},
+                )
+            )
+        except OSError as e:
+            issues.append(
+                ValidationIssue(
+                    severity="error",
+                    category="unreadable_file",
+                    message=f"{os.path.join(*parts)} can't be read: {e}",
+                    details={"domain": domain, "path": path},
+                )
+            )
+    return issues
+
+
 def validate_project(project_dir: str) -> List[ValidationIssue]:
     """Run all validation checks on the current project state.
 
     Returns a list of issues found. Empty list = valid.
     """
     issues = []
+
+    # Integrity pass runs first — if any domain file is corrupt, the
+    # semantic checks below will see an empty dict (from read_json) and
+    # could produce misleading clean/dirty signals. Surface the raw
+    # integrity problem explicitly.
+    issues.extend(_check_file_integrity(project_dir))
 
     cuts = read_json(os.path.join(project_dir, "timeline", "cuts.json"))
     color = read_json(os.path.join(project_dir, "timeline", "color.json"))
@@ -58,33 +110,41 @@ def _collect_video_item_ids(cuts: dict) -> Set[str]:
     return ids
 
 
-def _check_orphaned_color_refs(color: dict, video_ids: Set[str]) -> List[ValidationIssue]:
+def _check_orphaned_color_refs(
+    color: dict, video_ids: Set[str]
+) -> List[ValidationIssue]:
     """Check for color grades that reference non-existent clips."""
     issues = []
     grades = color.get("grades", {})
     for item_id in grades:
         if item_id not in video_ids:
-            issues.append(ValidationIssue(
-                severity="error",
-                category="orphaned_ref",
-                message=f"Color grade references deleted clip '{item_id}'",
-                details={"item_id": item_id, "domain": "color"},
-            ))
+            issues.append(
+                ValidationIssue(
+                    severity="error",
+                    category="orphaned_ref",
+                    message=f"Color grade references deleted clip '{item_id}'",
+                    details={"item_id": item_id, "domain": "color"},
+                )
+            )
     return issues
 
 
-def _check_orphaned_effect_refs(effects: dict, video_ids: Set[str]) -> List[ValidationIssue]:
+def _check_orphaned_effect_refs(
+    effects: dict, video_ids: Set[str]
+) -> List[ValidationIssue]:
     """Check for effects that reference non-existent clips."""
     issues = []
     clip_effects = effects.get("clip_effects", {})
     for item_id in clip_effects:
         if item_id not in video_ids:
-            issues.append(ValidationIssue(
-                severity="error",
-                category="orphaned_ref",
-                message=f"Effect references deleted clip '{item_id}'",
-                details={"item_id": item_id, "domain": "effects"},
-            ))
+            issues.append(
+                ValidationIssue(
+                    severity="error",
+                    category="orphaned_ref",
+                    message=f"Effect references deleted clip '{item_id}'",
+                    details={"item_id": item_id, "domain": "effects"},
+                )
+            )
     return issues
 
 
@@ -106,20 +166,22 @@ def _check_overlapping_clips(cuts: dict) -> List[ValidationIssue]:
             next_start = next_item.get("record_start_frame", 0)
 
             if current_end > next_start:
-                issues.append(ValidationIssue(
-                    severity="error",
-                    category="overlap",
-                    message=(
-                        f"Clips overlap on V{track_idx}: "
-                        f"'{current.get('name', '?')}' (ends frame {current_end}) "
-                        f"overlaps '{next_item.get('name', '?')}' (starts frame {next_start})"
-                    ),
-                    details={
-                        "track": track_idx,
-                        "clip_a": current.get("id"),
-                        "clip_b": next_item.get("id"),
-                    },
-                ))
+                issues.append(
+                    ValidationIssue(
+                        severity="error",
+                        category="overlap",
+                        message=(
+                            f"Clips overlap on V{track_idx}: "
+                            f"'{current.get('name', '?')}' (ends frame {current_end}) "
+                            f"overlaps '{next_item.get('name', '?')}' (starts frame {next_start})"
+                        ),
+                        details={
+                            "track": track_idx,
+                            "clip_a": current.get("id"),
+                            "clip_b": next_item.get("id"),
+                        },
+                    )
+                )
     return issues
 
 
@@ -159,24 +221,28 @@ def _check_audio_video_sync(cuts: dict, audio: dict) -> List[ValidationIssue]:
             a_end = audio_item.get("end_frame", 0)
 
             if v_start != a_start or v_end != a_end:
-                issues.append(ValidationIssue(
-                    severity="warning",
-                    category="sync",
-                    message=(
-                        f"Audio/video sync mismatch for media '{ref}': "
-                        f"video [{v_start}-{v_end}] vs audio [{a_start}-{a_end}]"
-                    ),
-                    details={
-                        "media_ref": ref,
-                        "video_item": video_item.get("id"),
-                        "audio_item": audio_item.get("id"),
-                    },
-                ))
+                issues.append(
+                    ValidationIssue(
+                        severity="warning",
+                        category="sync",
+                        message=(
+                            f"Audio/video sync mismatch for media '{ref}': "
+                            f"video [{v_start}-{v_end}] vs audio [{a_start}-{a_end}]"
+                        ),
+                        details={
+                            "media_ref": ref,
+                            "video_item": video_item.get("id"),
+                            "audio_item": audio_item.get("id"),
+                        },
+                    )
+                )
 
     return issues
 
 
-def _check_track_count_consistency(cuts: dict, audio: dict, metadata: dict) -> List[ValidationIssue]:
+def _check_track_count_consistency(
+    cuts: dict, audio: dict, metadata: dict
+) -> List[ValidationIssue]:
     """Check that track counts in metadata match actual tracks."""
     issues = []
     track_count = metadata.get("track_count", {})
@@ -184,22 +250,34 @@ def _check_track_count_consistency(cuts: dict, audio: dict, metadata: dict) -> L
     expected_video = track_count.get("video", 0)
     actual_video = len(cuts.get("video_tracks", []))
     if expected_video and actual_video != expected_video:
-        issues.append(ValidationIssue(
-            severity="warning",
-            category="track_count",
-            message=f"Metadata says {expected_video} video tracks, but cuts.json has {actual_video}",
-            details={"expected": expected_video, "actual": actual_video, "domain": "video"},
-        ))
+        issues.append(
+            ValidationIssue(
+                severity="warning",
+                category="track_count",
+                message=f"Metadata says {expected_video} video tracks, but cuts.json has {actual_video}",
+                details={
+                    "expected": expected_video,
+                    "actual": actual_video,
+                    "domain": "video",
+                },
+            )
+        )
 
     expected_audio = track_count.get("audio", 0)
     actual_audio = len(audio.get("audio_tracks", []))
     if expected_audio and actual_audio != expected_audio:
-        issues.append(ValidationIssue(
-            severity="warning",
-            category="track_count",
-            message=f"Metadata says {expected_audio} audio tracks, but audio.json has {actual_audio}",
-            details={"expected": expected_audio, "actual": actual_audio, "domain": "audio"},
-        ))
+        issues.append(
+            ValidationIssue(
+                severity="warning",
+                category="track_count",
+                message=f"Metadata says {expected_audio} audio tracks, but audio.json has {actual_audio}",
+                details={
+                    "expected": expected_audio,
+                    "actual": actual_audio,
+                    "domain": "audio",
+                },
+            )
+        )
 
     return issues
 
@@ -219,29 +297,35 @@ def _check_speed_duration_consistency(cuts: dict) -> List[ValidationIssue]:
             if pct == 100.0 or pct <= 0:
                 continue
 
-            record_dur = item.get("record_end_frame", 0) - item.get("record_start_frame", 0)
-            source_dur = item.get("source_end_frame", 0) - item.get("source_start_frame", 0)
+            record_dur = item.get("record_end_frame", 0) - item.get(
+                "record_start_frame", 0
+            )
+            source_dur = item.get("source_end_frame", 0) - item.get(
+                "source_start_frame", 0
+            )
             if source_dur <= 0 or record_dur <= 0:
                 continue
 
             expected_record = source_dur / (pct / 100.0)
             # Allow 10% tolerance for rounding and frame-boundary effects
             if abs(record_dur - expected_record) > max(expected_record * 0.1, 2):
-                issues.append(ValidationIssue(
-                    severity="warning",
-                    category="speed_duration",
-                    message=(
-                        f"Clip '{item.get('name', '?')}' has {pct}% speed but "
-                        f"record duration ({record_dur}f) doesn't match expected "
-                        f"({expected_record:.0f}f) — may be stale after merge"
-                    ),
-                    details={
-                        "item_id": item.get("id"),
-                        "speed_percent": pct,
-                        "record_duration": record_dur,
-                        "expected_duration": round(expected_record),
-                    },
-                ))
+                issues.append(
+                    ValidationIssue(
+                        severity="warning",
+                        category="speed_duration",
+                        message=(
+                            f"Clip '{item.get('name', '?')}' has {pct}% speed but "
+                            f"record duration ({record_dur}f) doesn't match expected "
+                            f"({expected_record:.0f}f) — may be stale after merge"
+                        ),
+                        details={
+                            "item_id": item.get("id"),
+                            "speed_percent": pct,
+                            "record_duration": record_dur,
+                            "expected_duration": round(expected_record),
+                        },
+                    )
+                )
     return issues
 
 
@@ -277,21 +361,23 @@ def _check_speed_sync(cuts: dict, audio: dict) -> List[ValidationIssue]:
             a_speed = audio_item.get("speed", {}).get("speed_percent", 100.0)
 
             if v_speed != a_speed:
-                issues.append(ValidationIssue(
-                    severity="warning",
-                    category="speed_sync",
-                    message=(
-                        f"Speed mismatch for linked media '{ref}': "
-                        f"video={v_speed}% vs audio={a_speed}%"
-                    ),
-                    details={
-                        "media_ref": ref,
-                        "video_item": video_item.get("id"),
-                        "audio_item": audio_item.get("id"),
-                        "video_speed": v_speed,
-                        "audio_speed": a_speed,
-                    },
-                ))
+                issues.append(
+                    ValidationIssue(
+                        severity="warning",
+                        category="speed_sync",
+                        message=(
+                            f"Speed mismatch for linked media '{ref}': "
+                            f"video={v_speed}% vs audio={a_speed}%"
+                        ),
+                        details={
+                            "media_ref": ref,
+                            "video_item": video_item.get("id"),
+                            "audio_item": audio_item.get("id"),
+                            "video_speed": v_speed,
+                            "audio_speed": a_speed,
+                        },
+                    )
+                )
 
     return issues
 

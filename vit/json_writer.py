@@ -54,7 +54,9 @@ def write_markers(project_dir: str, markers: List[Marker]) -> None:
 
 def write_metadata(project_dir: str, metadata: TimelineMetadata) -> None:
     """Write timeline/metadata.json."""
-    _write_json(os.path.join(project_dir, "timeline", "metadata.json"), metadata.to_dict())
+    _write_json(
+        os.path.join(project_dir, "timeline", "metadata.json"), metadata.to_dict()
+    )
 
 
 def write_manifest(project_dir: str, assets: Dict[str, Asset]) -> None:
@@ -75,11 +77,19 @@ def write_timeline(project_dir: str, timeline: Timeline) -> None:
 
 
 def read_json(filepath: str) -> dict:
-    """Read a JSON file, returning empty dict if not found."""
+    """Read a JSON file, returning empty dict if not found or unreadable.
+
+    A corrupt file becomes an empty dict so downstream consumers (the
+    validator, the serializer, the merge analyzer) can report a
+    meaningful diagnostic instead of crashing with JSONDecodeError.
+    """
     if not os.path.exists(filepath):
         return {}
-    with open(filepath) as f:
-        return json.load(f)
+    try:
+        with open(filepath) as f:
+            return json.load(f)
+    except (json.JSONDecodeError, OSError):
+        return {}
 
 
 def read_all_domain_files(project_dir: str) -> dict:
