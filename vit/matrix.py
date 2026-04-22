@@ -253,6 +253,108 @@ def cmd_status(project_dir: str) -> None:
     print()
 
 
+def cmd_promote(project_dir: str, name: str, *, dry_run: bool = False) -> None:
+    """Merge a variant back into its parent branch.
+
+    Use case: a derivative branch (e.g. 9x16-short) contains improvements
+    that should become the new baseline on main. We do this via a
+    no-ff merge so the fact that the change came from a specific variant
+    stays visible in history.
+
+    Safety:
+      - If the parent branch's working tree isn't clean, abort.
+      - If the merge introduces conflicts, abort and tell the user to
+        resolve on the parent branch manually.
+      - On success, registration stays — the variant can keep accumulating
+        changes against the new parent.
+    """
+    cfg = load_config(project_dir)
+    if name not in cfg.variants:
+        print(f"  Variant '{name}' not registered.")
+        return
+    variant = cfg.variants[name]
+    branches = set(git_list_branches(project_dir))
+    if name not in branches:
+        print(f"  Branch '{name}' does not exist.")
+        return
+    if variant.parent not in branches:
+        print(f"  Parent branch '{variant.parent}' does not exist.")
+        return
+
+    # Preview what would be merged
+    log = _run(
+        [
+            "log",
+            f"{variant.parent}..{name}",
+            "--reverse",
+            "--pretty=format:%H %s",
+        ],
+        cwd=project_dir,
+        check=False,
+    )
+    if log.returncode != 0 or not log.stdout.strip():
+        print(f"  '{variant.parent}' already contains '{name}'. Nothing to promote.")
+        return
+
+    commits = [
+        line.strip().split(" ", 1)
+        for line in log.stdout.strip().split("\n")
+        if line.strip()
+    ]
+    print(f"  {len(commits)} commit(s) to promote from '{name}' to '{variant.parent}':")
+    for sha, msg in commits:
+        print(f"    {sha[:7]}  {msg}")
+
+    if dry_run:
+        print("  (dry run, no action taken)")
+        return
+
+    current = git_current_branch(project_dir)
+    try:
+        # Switch to parent and ensure clean tree before we merge.
+        # Ignore .vit/variants.json — this is matrix's own metadata file
+        # and it's routine for it to be uncommitted between operations.
+        git_checkout(project_dir, variant.parent)
+        status = _run(["status", "--porcelain"], cwd=project_dir, check=False)
+        dirty = [
+            line
+            for line in status.stdout.splitlines()
+            if line.strip() and ".vit/variants.json" not in line.replace("\\", "/")
+        ]
+        if dirty:
+            print(
+                f"  '{variant.parent}' has uncommitted changes. Commit or "
+                "stash them before promoting."
+            )
+            return
+
+        result = _run(
+            [
+                "merge",
+                "--no-ff",
+                "-m",
+                f"vit: promote '{name}' into {variant.parent}",
+                name,
+            ],
+            cwd=project_dir,
+            check=False,
+        )
+        if result.returncode != 0:
+            # Merge failed — abort so parent stays clean.
+            _run(["merge", "--abort"], cwd=project_dir, check=False)
+            print(
+                f"  Merge produced conflicts. Parent '{variant.parent}' left "
+                "unchanged. Resolve on the variant first, then retry."
+            )
+            return
+        print(f"  Promoted '{name}' into '{variant.parent}'.")
+    finally:
+        try:
+            git_checkout(project_dir, current)
+        except GitError:
+            pass
+
+
 def cmd_rederive(project_dir: str, name: str, *, dry_run: bool = False) -> None:
     """Cherry-pick parent's new commits onto the variant branch."""
     cfg = load_config(project_dir)
@@ -345,6 +447,9 @@ def run_cli(subcmd: str, args) -> int:
         return 0
     if subcmd == "rederive":
         cmd_rederive(project_dir, args.name, dry_run=args.dry_run)
+        return 0
+    if subcmd == "promote":
+        cmd_promote(project_dir, args.name, dry_run=args.dry_run)
         return 0
     print(f"Unknown matrix subcommand: {subcmd}")
     return 1

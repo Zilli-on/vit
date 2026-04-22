@@ -163,28 +163,38 @@ def test_rederive_replays_parent_commit(project_dir):
 
 
 def test_commits_behind_counts_zero_after_rederive_despite_hash_change(project_dir):
-    """After cherry-pick the replayed commits have new hashes. Plain
-    rev-list would still report 'behind'; `git cherry` pairs by patch-id
-    so the semantic behind count must reach zero."""
+    """After cherry-pick onto a diverged branch, the replayed commit gets
+    a new hash. Plain rev-list still reports 'behind'; git cherry pairs
+    by patch-id so the semantic behind count must reach zero.
+
+    We force divergence by committing variant-only work before rederive.
+    Without divergence, git's content-addressing can collapse the
+    cherry-pick into the same hash as the source commit, which would
+    defeat the test's intent.
+    """
     matrix.cmd_add(project_dir, "v1")
-    path = os.path.join(project_dir, "README.md")
-    with open(path, "w") as f:
+
+    # Diverge v1 so the cherry-pick is guaranteed to produce a new hash.
+    subprocess.run(["git", "checkout", "v1"], cwd=project_dir, check=True)
+    with open(os.path.join(project_dir, "variant_only.txt"), "w") as f:
+        f.write("variant work")
+    subprocess.run(["git", "add", "variant_only.txt"], cwd=project_dir, check=True)
+    subprocess.run(
+        ["git", "commit", "-m", "variant: work"],
+        cwd=project_dir,
+        check=True,
+    )
+    subprocess.run(["git", "checkout", "main"], cwd=project_dir, check=True)
+
+    with open(os.path.join(project_dir, "README.md"), "w") as f:
         f.write("hero v2")
     subprocess.run(["git", "add", "README.md"], cwd=project_dir, check=True)
     subprocess.run(["git", "commit", "-m", "main: v2"], cwd=project_dir, check=True)
     matrix.cmd_rederive(project_dir, "v1")
 
-    # Sanity check: the commit hashes must actually differ — if they
-    # happened to match, this test would pass for the wrong reason.
-    v1_head = subprocess.run(
-        ["git", "rev-parse", "v1"], cwd=project_dir, capture_output=True, text=True
-    ).stdout.strip()
-    main_head = subprocess.run(
-        ["git", "rev-parse", "main"], cwd=project_dir, capture_output=True, text=True
-    ).stdout.strip()
-    assert v1_head != main_head, "cherry-pick should produce a new hash"
-
-    # Plain rev-list would say "1 behind" here; git cherry must say 0.
+    # After divergent rederive: rev-list reports 1 (original main: v2
+    # commit still not on v1 by hash); git cherry reports 0 because the
+    # patch is already applied.
     rev_list = subprocess.run(
         ["git", "rev-list", "--count", "v1..main"],
         cwd=project_dir,
@@ -252,3 +262,113 @@ def test_humanize_handles_recent():
     import time
 
     assert matrix._humanize(time.time()) == "just now"
+
+
+def test_promote_merges_variant_into_parent(project_dir):
+    matrix.cmd_add(project_dir, "v1")
+    # Put a commit on v1 only.
+    subprocess.run(["git", "checkout", "v1"], cwd=project_dir, check=True)
+    path = os.path.join(project_dir, "feature.txt")
+    with open(path, "w") as f:
+        f.write("from-variant")
+    subprocess.run(["git", "add", "feature.txt"], cwd=project_dir, check=True)
+    subprocess.run(
+        ["git", "commit", "-m", "variant: new feature"],
+        cwd=project_dir,
+        check=True,
+    )
+    subprocess.run(["git", "checkout", "main"], cwd=project_dir, check=True)
+
+    matrix.cmd_promote(project_dir, "v1")
+
+    # Parent should now have the variant's feature file.
+    assert os.path.exists(os.path.join(project_dir, "feature.txt"))
+    # main should have a merge commit (no-ff).
+    log = subprocess.run(
+        ["git", "log", "main", "--oneline", "--first-parent"],
+        cwd=project_dir,
+        capture_output=True,
+        text=True,
+    )
+    assert "promote 'v1'" in log.stdout
+
+
+def test_promote_noop_when_already_merged(project_dir, capsys):
+    matrix.cmd_add(project_dir, "v1")
+    matrix.cmd_promote(project_dir, "v1")
+    out = capsys.readouterr().out
+    assert "already contains" in out.lower() or "nothing to promote" in out.lower()
+
+
+def test_promote_dry_run_leaves_parent_untouched(project_dir, capsys):
+    matrix.cmd_add(project_dir, "v1")
+    subprocess.run(["git", "checkout", "v1"], cwd=project_dir, check=True)
+    with open(os.path.join(project_dir, "feature.txt"), "w") as f:
+        f.write("x")
+    subprocess.run(["git", "add", "feature.txt"], cwd=project_dir, check=True)
+    subprocess.run(["git", "commit", "-m", "variant: new"], cwd=project_dir, check=True)
+    subprocess.run(["git", "checkout", "main"], cwd=project_dir, check=True)
+
+    head_before = subprocess.run(
+        ["git", "rev-parse", "main"],
+        cwd=project_dir,
+        capture_output=True,
+        text=True,
+    ).stdout.strip()
+
+    matrix.cmd_promote(project_dir, "v1", dry_run=True)
+
+    head_after = subprocess.run(
+        ["git", "rev-parse", "main"],
+        cwd=project_dir,
+        capture_output=True,
+        text=True,
+    ).stdout.strip()
+    assert head_before == head_after  # main unchanged
+
+
+def test_promote_aborts_on_conflict(project_dir, capsys):
+    """Divergent content on the same file in both branches must result
+    in an aborted merge with parent left clean."""
+    matrix.cmd_add(project_dir, "v1")
+
+    # Variant side
+    subprocess.run(["git", "checkout", "v1"], cwd=project_dir, check=True)
+    with open(os.path.join(project_dir, "contested.txt"), "w") as f:
+        f.write("from variant\n")
+    subprocess.run(["git", "add", "contested.txt"], cwd=project_dir, check=True)
+    subprocess.run(["git", "commit", "-m", "variant"], cwd=project_dir, check=True)
+
+    # Main side diverges on the same file
+    subprocess.run(["git", "checkout", "main"], cwd=project_dir, check=True)
+    with open(os.path.join(project_dir, "contested.txt"), "w") as f:
+        f.write("from main\n")
+    subprocess.run(["git", "add", "contested.txt"], cwd=project_dir, check=True)
+    subprocess.run(["git", "commit", "-m", "main"], cwd=project_dir, check=True)
+
+    head_before = subprocess.run(
+        ["git", "rev-parse", "main"],
+        cwd=project_dir,
+        capture_output=True,
+        text=True,
+    ).stdout.strip()
+
+    matrix.cmd_promote(project_dir, "v1")
+
+    head_after = subprocess.run(
+        ["git", "rev-parse", "main"],
+        cwd=project_dir,
+        capture_output=True,
+        text=True,
+    ).stdout.strip()
+    # Merge aborted → main unchanged, no MERGE_HEAD stays around.
+    assert head_before == head_after
+    assert not os.path.exists(os.path.join(project_dir, ".git", "MERGE_HEAD"))
+    out = capsys.readouterr().out
+    assert "conflict" in out.lower()
+
+
+def test_promote_rejects_unregistered_variant(project_dir, capsys):
+    matrix.cmd_promote(project_dir, "ghost")
+    out = capsys.readouterr().out
+    assert "not registered" in out.lower()

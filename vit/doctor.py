@@ -103,6 +103,76 @@ def _probe_git() -> Check:
     return Check("git", "OK", out)
 
 
+def _probe_git_lfs() -> Check:
+    """LFS is strongly recommended for the .cube / .drx sidecars a
+    graded project accumulates — a 2-year project can otherwise push
+    hundreds of MB of binaries through plain git."""
+    git = shutil.which("git")
+    if not git:
+        return Check(
+            "git-lfs",
+            "WARN",
+            "git not available, can't probe",
+            fix="Install git first.",
+        )
+    try:
+        result = subprocess.run(
+            [git, "lfs", "version"],
+            capture_output=True,
+            text=True,
+            timeout=5,
+        )
+    except Exception as e:
+        return Check(
+            "git-lfs",
+            "WARN",
+            f"git lfs probe failed: {e}",
+            fix="Install Git LFS if you expect graded projects.",
+        )
+    if result.returncode != 0:
+        return Check(
+            "git-lfs",
+            "WARN",
+            "git-lfs not installed",
+            fix="https://git-lfs.com -- recommended for timeline/grades/*.cube",
+        )
+    ver = result.stdout.strip().splitlines()[0] if result.stdout else "ok"
+    return Check("git-lfs", "OK", ver)
+
+
+def _probe_project_lfs_config() -> Check:
+    """If we're inside a vit project, check whether .gitattributes routes
+    the LUT / DRX sidecars through LFS. Harmless no-op outside a project."""
+    try:
+        from .core import find_project_root
+    except Exception:
+        return Check("project LFS config", "WARN", "vit.core import failed")
+    root = find_project_root()
+    if root is None:
+        return Check("project LFS config", "OK", "not inside a vit project (optional)")
+    ga_path = os.path.join(root, ".gitattributes")
+    if not os.path.exists(ga_path):
+        return Check(
+            "project LFS config",
+            "WARN",
+            ".gitattributes missing",
+            fix="add `*.cube filter=lfs diff=lfs merge=lfs -text` once you have graded clips.",
+        )
+    try:
+        with open(ga_path, encoding="utf-8") as f:
+            attrs = f.read()
+    except OSError as e:
+        return Check("project LFS config", "WARN", f".gitattributes unreadable: {e}")
+    if "filter=lfs" not in attrs:
+        return Check(
+            "project LFS config",
+            "WARN",
+            ".gitattributes present but no LFS filter",
+            fix="add `*.cube filter=lfs diff=lfs merge=lfs -text` + `*.drx` similarly.",
+        )
+    return Check("project LFS config", "OK", ".gitattributes routes LFS")
+
+
 def _probe_resolve_install() -> Check:
     path = _resolve_install_dir()
     if path:
@@ -242,6 +312,8 @@ def _probe_last_project() -> Check:
 _PROBES: List[Callable[[], Check]] = [
     _probe_python,
     _probe_git,
+    _probe_git_lfs,
+    _probe_project_lfs_config,
     _probe_resolve_install,
     _probe_resolve_scripts_dir,
     _probe_package_path,

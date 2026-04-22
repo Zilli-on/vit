@@ -77,12 +77,11 @@ def git_init(project_dir: str) -> None:
     vit_dir = os.path.join(project_dir, ".vit")
     os.makedirs(vit_dir, exist_ok=True)
 
-    import json
+    from . import __version__
+    from .schema import CURRENT_SCHEMA_VERSION
+    from .schema.migrations import write_schema_version
 
-    config = {"version": "0.1.0", "nle": "resolve"}
-    config_path = os.path.join(vit_dir, "config.json")
-    with open(config_path, "w") as f:
-        json.dump(config, f, indent=2, sort_keys=True)
+    write_schema_version(project_dir, CURRENT_SCHEMA_VERSION, vit_version=__version__)
 
     # Create timeline and assets directories
     timeline_dir = os.path.join(project_dir, "timeline")
@@ -256,10 +255,15 @@ def is_git_repo(project_dir: str) -> bool:
 
 
 def find_project_root(start_dir: Optional[str] = None) -> Optional[str]:
-    """Find the vit project root by looking for .vit/ directory."""
+    """Find the vit project root by looking for .vit/config.json.
+
+    Checking for the config file (not just the `.vit/` dir) avoids a
+    false match on `~/.vit/`, which is vit's installer state directory
+    and happens to be an ancestor of every path in the user's home.
+    """
     current = start_dir or os.getcwd()
     while True:
-        if os.path.isdir(os.path.join(current, ".vit")):
+        if os.path.isfile(os.path.join(current, ".vit", "config.json")):
             return current
         parent = os.path.dirname(current)
         if parent == current:
@@ -299,16 +303,18 @@ def git_clone(url: str, dest_dir: str) -> None:
         detail = result.stderr.strip() or result.stdout.strip()
         raise GitError(f"git clone failed: {detail}")
 
-    # Ensure .vit/config.json exists so the cloned dir is recognized as a vit project
-    import json
-
+    # Ensure .vit/config.json exists so the cloned dir is recognized as a
+    # vit project. The cloned repo may already carry a newer config; don't
+    # overwrite it. Only write a minimal config when none exists.
     vit_dir = os.path.join(dest_dir, ".vit")
     config_path = os.path.join(vit_dir, "config.json")
     if not os.path.exists(config_path):
+        from . import __version__
+        from .schema import CURRENT_SCHEMA_VERSION
+        from .schema.migrations import write_schema_version
+
         os.makedirs(vit_dir, exist_ok=True)
-        config = {"version": "0.1.0", "nle": "resolve"}
-        with open(config_path, "w") as f:
-            json.dump(config, f, indent=2, sort_keys=True)
+        write_schema_version(dest_dir, CURRENT_SCHEMA_VERSION, vit_version=__version__)
 
 
 def git_config_get(project_dir: str, key: str) -> Optional[str]:

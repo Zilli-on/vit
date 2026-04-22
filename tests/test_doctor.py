@@ -128,3 +128,75 @@ def test_run_diagnostics_never_crashes(monkeypatch):
     assert len(checks) == 1
     assert checks[0].status == "FAIL"
     assert "probe crashed" in checks[0].detail
+
+
+def test_probe_git_lfs_reports_status_without_crash():
+    from vit.doctor import _probe_git_lfs
+
+    c = _probe_git_lfs()
+    assert c.name == "git-lfs"
+    assert c.status in ("OK", "WARN")
+
+
+def test_probe_git_lfs_warn_when_lfs_missing(monkeypatch):
+    """Simulate `git lfs version` failing (LFS not installed)."""
+    from unittest.mock import MagicMock, patch
+
+    import vit.doctor as d
+
+    fake = MagicMock(returncode=1, stdout="", stderr="git: 'lfs' is not a command")
+    with (
+        patch("shutil.which", return_value="/fake/git"),
+        patch("subprocess.run", return_value=fake),
+    ):
+        c = d._probe_git_lfs()
+    assert c.status == "WARN"
+    assert "lfs" in c.detail.lower()
+    assert c.fix  # must point the user somewhere
+
+
+def test_probe_project_lfs_config_warns_on_missing_attributes(tmp_path, monkeypatch):
+    """Inside a vit project without .gitattributes, warn."""
+    (tmp_path / ".vit").mkdir()
+    # find_project_root keys off .vit/config.json now, not just the dir.
+    (tmp_path / ".vit" / "config.json").write_text('{"schema_version": 1}')
+    monkeypatch.chdir(tmp_path)
+    from vit.doctor import _probe_project_lfs_config
+
+    c = _probe_project_lfs_config()
+    assert c.status == "WARN"
+    assert ".gitattributes" in c.detail
+
+
+def test_probe_project_lfs_config_ok_with_lfs_filter(tmp_path, monkeypatch):
+    (tmp_path / ".vit").mkdir()
+    (tmp_path / ".vit" / "config.json").write_text('{"schema_version": 1}')
+    (tmp_path / ".gitattributes").write_text(
+        "*.cube filter=lfs diff=lfs merge=lfs -text\n"
+    )
+    monkeypatch.chdir(tmp_path)
+    from vit.doctor import _probe_project_lfs_config
+
+    c = _probe_project_lfs_config()
+    assert c.status == "OK"
+
+
+def test_probe_project_lfs_config_ok_outside_project(tmp_path, monkeypatch):
+    """Outside a vit project the probe must return OK with a benign note,
+    not FAIL (it's an optional context-sensitive check)."""
+    monkeypatch.chdir(tmp_path)
+    from vit.doctor import _probe_project_lfs_config
+
+    c = _probe_project_lfs_config()
+    assert c.status == "OK"
+
+
+def test_lfs_probes_are_registered():
+    """The new probes must actually run as part of run_diagnostics, not
+    just exist as functions."""
+    import vit.doctor as d
+
+    checks = d.run_diagnostics()
+    names = {c.name for c in checks}
+    assert "git-lfs" in names
+    assert "project LFS config" in names

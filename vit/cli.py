@@ -41,10 +41,20 @@ from .validator import format_issues, validate_project
 
 
 def _require_project() -> str:
-    """Find the vit project root or exit with error."""
+    """Find the vit project root, run pending migrations, or exit."""
     root = find_project_root()
     if root is None:
         print("Error: Not a vit project. Run 'vit init' first.")
+        sys.exit(1)
+    try:
+        from . import __version__
+        from .schema.migrations import migrate_if_needed
+
+        applied = migrate_if_needed(root, vit_version=__version__)
+        if applied:
+            print(f"  Upgraded project schema: {', '.join(applied)}")
+    except RuntimeError as e:
+        print(f"Error: {e}")
         sys.exit(1)
     return root
 
@@ -957,6 +967,18 @@ def main():
         "--dry-run", action="store_true", help="Show what would be replayed, do nothing"
     )
     m_rederive.set_defaults(func=cmd_matrix, matrix_cmd="rederive")
+
+    m_promote = matrix_sub.add_parser(
+        "promote",
+        help="Merge a variant back into its parent (e.g. promote to main)",
+    )
+    m_promote.add_argument("name", help="Variant branch to promote")
+    m_promote.add_argument(
+        "--dry-run",
+        action="store_true",
+        help="Show what would be merged, do nothing",
+    )
+    m_promote.set_defaults(func=cmd_matrix, matrix_cmd="promote")
 
     # panel — Resolve panel health / control
     p_panel = subparsers.add_parser(
