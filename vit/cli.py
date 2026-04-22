@@ -539,6 +539,13 @@ _RESOLVE_MENU_NAMES = {
 }
 
 
+# Resolve scans scripts per page at startup. Installing into Utility/
+# makes the panel appear in every page's Workspace > Scripts submenu.
+# Edit/ is kept for compatibility with upstream docs; Utility/ is the
+# one that actually gives global visibility.
+_RESOLVE_SCRIPT_SUBDIRS = ("Utility", "Edit")
+
+
 def _resolve_menu_name(script_name: str) -> str:
     return _RESOLVE_MENU_NAMES.get(script_name, script_name)
 
@@ -563,26 +570,32 @@ def cmd_install_resolve(args):
         print(f"  Checked: {plugin_dir}")
         sys.exit(1)
 
-    os.makedirs(RESOLVE_SCRIPTS_DIR, exist_ok=True)
+    # Install into every known page-scoped scripts subdir so Workspace >
+    # Scripts shows "Vit" regardless of which page the user is on.
+    scripts_root = os.path.dirname(RESOLVE_SCRIPTS_DIR)  # .../Fusion/Scripts
+    installed = 0
+    for subdir in _RESOLVE_SCRIPT_SUBDIRS:
+        target_dir = os.path.join(scripts_root, subdir)
+        os.makedirs(target_dir, exist_ok=True)
 
-    for script_name in RESOLVE_SCRIPT_NAMES:
-        source = os.path.join(plugin_dir, script_name)
-        if not os.path.exists(source):
-            print(f"  Warning: {script_name} not found, skipping.")
-            continue
+        for script_name in RESOLVE_SCRIPT_NAMES:
+            source = os.path.join(plugin_dir, script_name)
+            if not os.path.exists(source):
+                print(f"  Warning: {script_name} not found, skipping.")
+                continue
 
-        menu_name = _resolve_menu_name(script_name)
-        dest = os.path.join(RESOLVE_SCRIPTS_DIR, menu_name)
+            menu_name = _resolve_menu_name(script_name)
+            dest = os.path.join(target_dir, menu_name)
 
-        # Remove existing link/file
-        if os.path.islink(dest) or os.path.exists(dest):
-            os.remove(dest)
+            if os.path.islink(dest) or os.path.exists(dest):
+                os.remove(dest)
 
-        if sys.platform == "win32":
-            shutil.copy2(source, dest)
-        else:
-            os.symlink(source, dest)
-        print(f"  Linked: {menu_name} -> {source}")
+            if sys.platform == "win32":
+                shutil.copy2(source, dest)
+            else:
+                os.symlink(source, dest)
+            print(f"  Linked: {subdir}/{menu_name} -> {source}")
+            installed += 1
 
     # Save the repo root path so Resolve scripts can find the vit package
     # even if __file__ or symlink resolution fails in Resolve's Python
@@ -592,7 +605,7 @@ def cmd_install_resolve(args):
         f.write(package_dir)
     print(f"  Saved package path: {package_dir}")
 
-    print(f"\n  Installed {len(RESOLVE_SCRIPT_NAMES)} script(s) to Resolve.")
+    print(f"\n  Installed {installed} script(s) to Resolve.")
     print(
         "  Restart Resolve, then run Workspace > Scripts > Vit for the unified panel."
     )
@@ -777,8 +790,7 @@ def cmd_collab_setup(args):
 
 
 def cmd_uninstall_resolve(args):
-    """Remove Resolve plugin symlinks."""
-    # Include legacy script names so old installs get cleaned up
+    """Remove Resolve plugin symlinks from every known scripts subdir."""
     _ALL_VIT_NAMES = [
         "Vit.py",
         "Vit - Panel.py",
@@ -790,13 +802,22 @@ def cmd_uninstall_resolve(args):
         "Vit - Push.py",
         "Vit - Pull & Restore.py",
     ]
+    # Clean up Scripts root + every page-scoped subdir + legacy Edit/.
+    scripts_root = os.path.dirname(RESOLVE_SCRIPTS_DIR)
+    candidate_dirs = [scripts_root] + [
+        os.path.join(scripts_root, sub)
+        for sub in set(list(_RESOLVE_SCRIPT_SUBDIRS) + ["Comp", "Deliver"])
+    ]
+
     removed = 0
-    for menu_name in _ALL_VIT_NAMES:
-        dest = os.path.join(RESOLVE_SCRIPTS_DIR, menu_name)
-        if os.path.islink(dest) or os.path.exists(dest):
-            os.remove(dest)
-            print(f"  Removed: {menu_name}")
-            removed += 1
+    for dir_path in candidate_dirs:
+        for menu_name in _ALL_VIT_NAMES:
+            dest = os.path.join(dir_path, menu_name)
+            if os.path.islink(dest) or os.path.exists(dest):
+                os.remove(dest)
+                rel = os.path.relpath(dest, scripts_root)
+                print(f"  Removed: {rel}")
+                removed += 1
 
     if removed:
         print(f"\n  Uninstalled {removed} scripts from Resolve.")
