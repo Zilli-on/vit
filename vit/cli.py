@@ -35,7 +35,6 @@ from .core import (
     git_revert,
     git_show_file,
     git_status,
-    is_git_repo,
 )
 from .json_writer import read_all_domain_files, write_timeline
 from .validator import format_issues, validate_project
@@ -62,6 +61,7 @@ def cmd_init(args):
 
     # Write empty domain files for initial commit
     from .models import Timeline
+
     write_timeline(project_dir, Timeline())
 
     git_add(project_dir, [".vit/", "timeline/", "assets/", ".gitignore"])
@@ -110,9 +110,11 @@ def cmd_commit(args):
         # Try AI-suggested commit message
         try:
             from .differ import diff_from_project
+
             diff_text = diff_from_project(project_dir)
             if diff_text.strip():
                 from .ai_merge import suggest_commit_message
+
                 suggestion = suggest_commit_message(diff_text)
                 if suggestion:
                     print(f'  AI suggested: "{suggestion}"')
@@ -173,13 +175,14 @@ def cmd_checkout(args):
 def cmd_merge(args):
     """Merge a branch into current branch."""
     from .core import git_is_clean
+
     project_dir = _require_project()
     branch = args.branch
     current = git_current_branch(project_dir)
 
     # Auto-commit any outstanding changes before merge
     if not git_is_clean(project_dir):
-        print(f"  Auto-saving uncommitted changes before merge...")
+        print("  Auto-saving uncommitted changes before merge...")
         git_add(project_dir, ["timeline/", "assets/", ".vit/", ".gitignore"])
         try:
             git_commit(project_dir, f"vit: auto-save before merging '{branch}'")
@@ -192,6 +195,7 @@ def cmd_merge(args):
         try:
             from .differ import get_branch_diff_by_category
             from .ai_merge import analyze_branch_comparison
+
             changes_ours, changes_theirs = get_branch_diff_by_category(
                 project_dir, current, branch
             )
@@ -230,7 +234,9 @@ def cmd_merge(args):
 
         # Get merge base and branch files for overlap detection
         merge_base_ref = git_merge_base(project_dir, current, branch)
-        base_files = _load_files_at_ref(project_dir, merge_base_ref) if merge_base_ref else {}
+        base_files = (
+            _load_files_at_ref(project_dir, merge_base_ref) if merge_base_ref else {}
+        )
         theirs_files = _load_files_at_ref(project_dir, branch)
 
         # Check if both branches modified the same domain files
@@ -239,16 +245,14 @@ def cmd_merge(args):
         )
 
         errors = [i for i in issues if i.severity == "error"]
-        needs_ai_review = (
-            not args.no_ai and (errors or overlapping_domains)
-        )
+        needs_ai_review = not args.no_ai and (errors or overlapping_domains)
 
         if not issues and not overlapping_domains:
             print("  Post-merge validation passed.")
             return
 
         if issues:
-            print(f"\n  Post-merge validation found issues:")
+            print("\n  Post-merge validation found issues:")
             print(format_issues(issues))
 
         if overlapping_domains and not issues:
@@ -257,10 +261,15 @@ def cmd_merge(args):
 
         if needs_ai_review:
             from .ai_merge import merge_with_ai
+
             resolved = merge_with_ai(
-                project_dir, branch,
-                base_files, pre_merge_files, theirs_files,
-                issues, [],
+                project_dir,
+                branch,
+                base_files,
+                pre_merge_files,
+                theirs_files,
+                issues,
+                [],
             )
             if resolved:
                 git_add(project_dir, ["timeline/", "assets/"])
@@ -289,17 +298,24 @@ def cmd_merge(args):
         # Try AI resolution
         print("\n  Attempting AI-assisted conflict resolution...")
         merge_base_ref = git_merge_base(project_dir, current, branch)
-        base_files = _load_files_at_ref(project_dir, merge_base_ref) if merge_base_ref else {}
+        base_files = (
+            _load_files_at_ref(project_dir, merge_base_ref) if merge_base_ref else {}
+        )
         theirs_files = _load_files_at_ref(project_dir, branch)
 
         # Abort the failed merge to get clean state for AI
         git_merge_abort(project_dir)
 
         from .ai_merge import merge_with_ai
+
         resolved = merge_with_ai(
-            project_dir, branch,
-            base_files, pre_merge_files, theirs_files,
-            [], conflicted,
+            project_dir,
+            branch,
+            base_files,
+            pre_merge_files,
+            theirs_files,
+            [],
+            conflicted,
         )
         if resolved:
             git_add(project_dir, ["timeline/", "assets/"])
@@ -370,6 +386,7 @@ def cmd_diff(args):
 
     try:
         from .differ import diff_from_project
+
         output = diff_from_project(project_dir, ref)
         if output.strip():
             print(output)
@@ -394,6 +411,7 @@ def cmd_log(args):
         if args.summary:
             try:
                 from .ai_merge import summarize_log
+
                 summary = summarize_log(output)
                 if summary:
                     print(f"\n  AI Summary: {summary}")
@@ -444,8 +462,10 @@ def cmd_push(args):
         if _is_github_auth_error(err):
             print()
             print("  GitHub auth failed. SSH is the recommended fix:")
-            print("    1. ssh-keygen -t ed25519 -C \"your@email.com\"")
-            print("    2. Add ~/.ssh/id_ed25519.pub at https://github.com/settings/ssh/new")
+            print('    1. ssh-keygen -t ed25519 -C "your@email.com"')
+            print(
+                "    2. Add ~/.ssh/id_ed25519.pub at https://github.com/settings/ssh/new"
+            )
             print("    3. git remote set-url origin git@github.com:user/repo.git")
             print("  Or re-run 'vit collab setup' for a guided walkthrough.")
 
@@ -473,6 +493,15 @@ def cmd_validate(args):
         sys.exit(1)
     else:
         print("  Validation passed — no issues found.")
+
+
+def cmd_doctor(args):
+    """Diagnose install + environment — read-only."""
+    from .doctor import run_diagnostics, format_report, any_fails
+
+    checks = run_diagnostics()
+    print(format_report(checks))
+    sys.exit(1 if any_fails(checks) else 0)
 
 
 if sys.platform == "win32":
@@ -522,7 +551,7 @@ def cmd_install_resolve(args):
             plugin_dir = os.path.join(package_dir, "resolve_plugin")
 
     if not os.path.isdir(plugin_dir):
-        print(f"  Error: resolve_plugin/ directory not found.")
+        print("  Error: resolve_plugin/ directory not found.")
         print(f"  Checked: {os.path.join(package_dir, 'resolve_plugin')}")
         print(f"  Checked: {plugin_dir}")
         sys.exit(1)
@@ -557,7 +586,9 @@ def cmd_install_resolve(args):
     print(f"  Saved package path: {package_dir}")
 
     print(f"\n  Installed {len(RESOLVE_SCRIPT_NAMES)} script(s) to Resolve.")
-    print("  Restart Resolve, then run Workspace > Scripts > Vit for the unified panel.")
+    print(
+        "  Restart Resolve, then run Workspace > Scripts > Vit for the unified panel."
+    )
 
 
 def cmd_clone(args):
@@ -574,7 +605,9 @@ def cmd_clone(args):
         print(f"  Error: {e}")
         sys.exit(1)
     print(f"  Cloned into '{dest}'")
-    print(f"  Note: Media files are not included. Open the project in Resolve and relink any offline clips.")
+    print(
+        "  Note: Media files are not included. Open the project in Resolve and relink any offline clips."
+    )
     print(f"  Run 'vit checkout main' inside '{dest}' to restore the latest timeline.")
 
 
@@ -617,6 +650,7 @@ def _is_github_auth_error(error_str: str) -> bool:
 def _https_to_ssh_url(url: str) -> str:
     """Convert https://github.com/user/repo.git → git@github.com:user/repo.git"""
     import re
+
     match = re.match(r"https://github\.com/([^/]+)/(.+)", url)
     if match:
         return f"git@github.com:{match.group(1)}/{match.group(2)}"
@@ -646,7 +680,7 @@ def _print_ssh_instructions(url: str, remote_name: str) -> None:
         print(f"  Your URL:     {url}")
         print(f"  SSH version:  {ssh_url}")
         print()
-        print(f"  Update it with:")
+        print("  Update it with:")
         print(f"    git remote set-url {remote_name} {ssh_url}")
     else:
         print("  Use the SSH URL from GitHub: git@github.com:username/repo.git")
@@ -668,7 +702,7 @@ def cmd_collab_setup(args):
     # Check existing remotes
     remotes = git_remote_list(project_dir)
     if remotes:
-        print(f"  Existing remotes:")
+        print("  Existing remotes:")
         for r in remotes:
             print(f"    {r['name']}  {r['url']}")
         print()
@@ -681,7 +715,9 @@ def cmd_collab_setup(args):
     if url.startswith("https://"):
         ssh_url = _https_to_ssh_url(url)
         print()
-        print("  Note: you entered an HTTPS URL. SSH is recommended to avoid auth issues.")
+        print(
+            "  Note: you entered an HTTPS URL. SSH is recommended to avoid auth issues."
+        )
         if ssh_url != url:
             print(f"  SSH equivalent: {ssh_url}")
             choice = input("  Switch to SSH URL? [Y/n]: ").strip().lower()
@@ -716,12 +752,14 @@ def cmd_collab_setup(args):
         if _is_github_auth_error(err):
             _print_ssh_instructions(url, remote_name)
         else:
-            print("  Make sure the remote repository exists and is empty, then try again.")
+            print(
+                "  Make sure the remote repository exists and is empty, then try again."
+            )
         return
 
     print()
     print("  Setup complete!")
-    print(f"  Share this command with collaborators:")
+    print("  Share this command with collaborators:")
     print(f"    vit clone {url}")
     print()
     print("  Each collaborator should:")
@@ -796,7 +834,9 @@ def main():
     # merge
     p_merge = subparsers.add_parser("merge", help="Merge a branch")
     p_merge.add_argument("branch", help="Branch to merge")
-    p_merge.add_argument("--no-ai", action="store_true", help="Skip AI merge resolution")
+    p_merge.add_argument(
+        "--no-ai", action="store_true", help="Skip AI merge resolution"
+    )
     p_merge.set_defaults(func=cmd_merge)
 
     # diff
@@ -807,7 +847,9 @@ def main():
     # log
     p_log = subparsers.add_parser("log", help="Show version history")
     p_log.add_argument("-n", "--count", type=int, help="Max entries (default: 20)")
-    p_log.add_argument("--summary", action="store_true", help="Show AI summary of recent commits")
+    p_log.add_argument(
+        "--summary", action="store_true", help="Show AI summary of recent commits"
+    )
     p_log.set_defaults(func=cmd_log)
 
     # status
@@ -834,10 +876,16 @@ def main():
     p_validate = subparsers.add_parser("validate", help="Validate timeline consistency")
     p_validate.set_defaults(func=cmd_validate)
 
+    # doctor
+    p_doctor = subparsers.add_parser("doctor", help="Diagnose install and environment")
+    p_doctor.set_defaults(func=cmd_doctor)
+
     # clone
     p_clone = subparsers.add_parser("clone", help="Clone a remote vit project")
     p_clone.add_argument("url", help="Remote URL to clone")
-    p_clone.add_argument("directory", nargs="?", help="Target directory (default: repo name)")
+    p_clone.add_argument(
+        "directory", nargs="?", help="Target directory (default: repo name)"
+    )
     p_clone.set_defaults(func=cmd_clone)
 
     # remote
@@ -862,11 +910,15 @@ def main():
     p_collab.set_defaults(func=lambda a: p_collab.print_help())
 
     # install-resolve
-    p_install = subparsers.add_parser("install-resolve", help="Install scripts into DaVinci Resolve")
+    p_install = subparsers.add_parser(
+        "install-resolve", help="Install scripts into DaVinci Resolve"
+    )
     p_install.set_defaults(func=cmd_install_resolve)
 
     # uninstall-resolve
-    p_uninstall = subparsers.add_parser("uninstall-resolve", help="Remove scripts from DaVinci Resolve")
+    p_uninstall = subparsers.add_parser(
+        "uninstall-resolve", help="Remove scripts from DaVinci Resolve"
+    )
     p_uninstall.set_defaults(func=cmd_uninstall_resolve)
 
     args = parser.parse_args()
