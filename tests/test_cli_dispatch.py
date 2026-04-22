@@ -17,7 +17,6 @@ import subprocess
 import sys
 
 
-
 VIT_MODULE = ["-m", "vit.cli"]
 
 
@@ -105,7 +104,11 @@ def test_status_inside_project_returns_zero(tmp_path):
     _run_vit("init", str(target))
     r = _run_vit("status", cwd=str(target))
     assert r.returncode == 0
-    assert "Branch" in r.stdout
+    # Enriched status: branch + schema + AI + tree sections all present.
+    assert "Branch:" in r.stdout
+    assert "Schema:" in r.stdout
+    assert "AI:" in r.stdout
+    assert "Tree:" in r.stdout
 
 
 def test_status_outside_project_returns_one(tmp_path):
@@ -175,6 +178,34 @@ def test_matrix_without_init_is_graceful(tmp_path):
     r = _run_vit("matrix", "status", cwd=str(target))
     assert r.returncode == 0
     assert "No variants registered" in r.stdout
+
+
+def test_config_list_get_set_roundtrip(tmp_path):
+    target = tmp_path / "proj"
+    _run_vit("init", str(target))
+
+    # list shows ai.provider
+    r = _run_vit("config", "list", cwd=str(target))
+    assert r.returncode == 0
+    assert "ai.provider" in r.stdout
+
+    # get ai.provider reports null on a fresh project
+    r = _run_vit("config", "get", "ai.provider", cwd=str(target))
+    assert r.returncode == 0
+    assert "null" in r.stdout
+
+    # set + re-get
+    r = _run_vit("config", "set", "ai.provider", "ollama", cwd=str(target))
+    assert r.returncode == 0
+    r = _run_vit("config", "get", "ai.provider", cwd=str(target))
+    assert r.returncode == 0
+    assert "ollama" in r.stdout
+
+    # unknown value is rejected; previous value preserved
+    r = _run_vit("config", "set", "ai.provider", "chatgpt", cwd=str(target))
+    assert r.returncode == 1
+    r = _run_vit("config", "get", "ai.provider", cwd=str(target))
+    assert "ollama" in r.stdout
 
 
 # ---------- unknown commands fail cleanly ----------

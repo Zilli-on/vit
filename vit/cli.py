@@ -434,16 +434,53 @@ def cmd_log(args):
 
 
 def cmd_status(args):
-    """Show current project status."""
+    """Show current project status — branch, schema, AI provider, tree."""
     project_dir = _require_project()
-    current = git_current_branch(project_dir)
-    print(f"  Branch: {current}")
 
-    status = git_status(project_dir)
-    if status:
-        print(status)
+    # Git-level state
+    current = git_current_branch(project_dir)
+    tree = git_status(project_dir)
+
+    # Schema + AI provider from .vit/config.json
+    import json as _json
+
+    schema_version = "?"
+    ai_choice = "auto"
+    cfg_path = os.path.join(project_dir, ".vit", "config.json")
+    if os.path.exists(cfg_path):
+        try:
+            with open(cfg_path, encoding="utf-8") as f:
+                cfg = _json.load(f)
+            schema_version = str(cfg.get("schema_version", "?"))
+            ai_cfg = cfg.get("ai") or {}
+            if isinstance(ai_cfg, dict):
+                provider = ai_cfg.get("provider")
+                ai_choice = provider if provider else "auto"
+        except (OSError, _json.JSONDecodeError):
+            pass
+
+    # Which provider is active right now (may differ from config when
+    # config is 'auto' — then the factory picks based on availability)
+    try:
+        from .ai import get_provider
+
+        active_provider = get_provider(project_dir).name
+    except Exception:
+        active_provider = "?"
+
+    print(f"  Project:   {project_dir}")
+    print(f"  Branch:    {current}")
+    print(f"  Schema:    v{schema_version}")
+    if ai_choice == active_provider or ai_choice == "auto":
+        print(f"  AI:        {active_provider}  (config: {ai_choice})")
     else:
-        print("  Working tree clean.")
+        print(f"  AI:        {active_provider}  (config pins: {ai_choice})")
+    if tree:
+        print("  Tree:")
+        for line in tree.splitlines():
+            print(f"    {line}")
+    else:
+        print("  Tree:      clean")
 
 
 def cmd_revert(args):
@@ -526,6 +563,13 @@ def cmd_panel(args):
     from .panel_control import run_cli
 
     sys.exit(run_cli(getattr(args, "panel_cmd", None), args))
+
+
+def cmd_config(args):
+    """Dispatch `vit config <subcmd>` to the config module."""
+    from .config_cmd import run_cli
+
+    sys.exit(run_cli(getattr(args, "config_cmd", None), args))
 
 
 if sys.platform == "win32":
@@ -1002,6 +1046,25 @@ def main():
         "stop", help="Ask the running panel to shut down cleanly"
     )
     pn_stop.set_defaults(func=cmd_panel, panel_cmd="stop")
+
+    # config — read / write .vit/config.json values
+    p_config = subparsers.add_parser(
+        "config", help="Read or write values in .vit/config.json"
+    )
+    config_sub = p_config.add_subparsers(dest="config_cmd")
+    p_config.set_defaults(func=cmd_config, config_cmd=None)
+
+    c_list = config_sub.add_parser("list", help="Print all config values")
+    c_list.set_defaults(func=cmd_config, config_cmd="list")
+
+    c_get = config_sub.add_parser("get", help="Read one value by dotted key")
+    c_get.add_argument("key", help="e.g. ai.provider")
+    c_get.set_defaults(func=cmd_config, config_cmd="get")
+
+    c_set = config_sub.add_parser("set", help="Write one value by dotted key")
+    c_set.add_argument("key", help="e.g. ai.provider")
+    c_set.add_argument("value", help="e.g. ollama / null / gemini / claude_cli")
+    c_set.set_defaults(func=cmd_config, config_cmd="set")
 
     # clone
     p_clone = subparsers.add_parser("clone", help="Clone a remote vit project")

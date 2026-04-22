@@ -246,3 +246,19 @@ def test_fresh_git_init_lands_on_current_schema(tmp_path):
         cfg = json.load(f)
     assert cfg["schema_version"] == CURRENT_SCHEMA_VERSION
     assert cfg["ai"] == {"provider": None}
+
+
+def test_fresh_git_init_writes_gitattributes_with_lfs_filters(tmp_path):
+    """Every new project must ship a .gitattributes that routes
+    *.cube and *.drx through Git LFS. Harmless without LFS installed
+    — plain git just stores the files normally."""
+    from vit.core import git_init
+
+    project = tmp_path / "ga"
+    git_init(str(project))
+    ga = project / ".gitattributes"
+    assert ga.exists()
+    body = ga.read_text()
+    assert "*.cube" in body
+    assert "filter=lfs" in body
+    assert "*.drx" in body

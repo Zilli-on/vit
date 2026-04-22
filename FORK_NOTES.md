@@ -97,21 +97,101 @@ With this fork:
 dep. Qt + Gemini SDK are opt-in via `vit[qt]`, `vit[gemini]`, or
 `vit[all]`.
 
+### 5. Resolve panel control (`vit panel`)
+
+- `vit panel status` — reads `~/.vit/panel.state` (port + pid written by
+  the launcher), probes the pid liveness and pings the socket. Exit 0
+  only when both check out.
+- `vit panel log -n N` — tails `~/.vit/panel.log` (default 40 lines).
+- `vit panel stop` — sends a `quit` action over the socket for a clean
+  shutdown; cleans stale state files when the recorded pid is dead.
+
+### 6. Pluggable merge dialog (Qt + CLI)
+
+`vit/merge_dialog.py` wraps the interactive phase of a merge into a
+plug-in interface. `CliMergeDialog` preserves the upstream stdin loop;
+`QtMergeDialog` renders a PySide6 modal with one radio-button card per
+ambiguous decision, Apply / Cancel. `pick_dialog()` picks Qt when
+PySide6 imports, CLI otherwise. `VIT_MERGE_UI=qt|cli` forces a mode.
+
+### 7. Schema versioning + migrations
+
+`.vit/config.json` now carries `schema_version` + `vit_version` +
+`nle` + an `ai` block. A minimal migration runner in `vit/schema/`
+walks from the recorded version to `CURRENT_SCHEMA_VERSION`, running
+each registered migration's `apply(project_dir)` and persisting the
+new version only after the whole chain succeeds (never half-committed).
+Auto-upgrade runs via `_require_project` on every vit command — old
+repos get a one-shot "Upgraded project schema: …" banner on their
+next `vit status`. First real migration: **v1 → v2 adds `ai.provider`**.
+
+### 8. `vit config` — read / write config
+
+```
+vit config list                    # dump every key
+vit config get ai.provider         # single dotted key
+vit config set ai.provider ollama  # explicit whitelist, coerces null/true/false
+```
+
+Writable keys are whitelisted (`ai.provider`, `nle`); `schema_version`
+and friends are read-only from the CLI to avoid accidental corruption.
+
+### 9. Auto `.gitattributes` + LFS doctor probes
+
+`vit init` now writes a `.gitattributes` that routes `*.cube` and
+`*.drx` through Git LFS. Harmless without LFS installed. `vit doctor`
+gained a `git-lfs` probe (binary available) and a `project LFS config`
+probe (`.gitattributes` present + carries `filter=lfs`).
+
+### 10. Enriched `vit status`
+
+Shows project path, branch, schema version, active AI provider + the
+config-pinned provider (useful when config is `auto`), and the git
+tree state.
+
+### 11. `vit matrix promote <variant>`
+
+No-ff merge of a variant branch back into its parent. Refuses on a
+dirty parent tree (except for `.vit/variants.json`, matrix's own
+metadata). Aborts cleanly on conflict so the parent stays at the
+pre-merge commit. Optional `--dry-run`.
+
+## Zero-cost compliance
+
+With this fork:
+
+- **Ollama running locally** → full merge / commit-message / log-summary
+  / branch-comparison AI, entirely offline, zero API cost.
+- **No Ollama, no GEMINI_API_KEY, no `claude` CLI** → heuristic
+  fallback; vit works but gives no AI-assisted merge suggestions.
+- **`claude` CLI installed** (Claude Code subscribers) → Claude handles
+  AI tasks without needing an API key.
+
+`pip install vit` (base) is ~5 MB and pulls only `rich` as a runtime
+dep. Qt + Gemini SDK are opt-in via `vit[qt]`, `vit[gemini]`, or
+`vit[all]`.
+
 ## Verification on this machine
 
 - Python 3.12.10, git 2.46.2, DaVinci Resolve installed.
-- `pytest tests/`: **100 / 100 pass** (was 97 / 100 upstream).
-- `vit doctor`: 11 OK / 1 WARN (no GEMINI_API_KEY, expected).
-- `vit init x` → branch `main`, `vit validate` → no issues.
-- `vit install-resolve` → `Vit.py` copied to `%APPDATA%\Blackmagic
-  Design\DaVinci Resolve\Fusion\Scripts\Edit\`.
-- `vit matrix add/status/rederive` verified end-to-end with real
-  cherry-pick.
+- `pytest tests/`: **249 / 249 pass** (was 97 / 100 upstream).
+- `vit doctor`: 12 OK + 2 expected WARN.
+- `vit init x` → branch `main`, `.gitattributes` written,
+  `.vit/config.json` at schema v2 with `ai.provider=null`, `vit
+  validate` → no issues.
+- `vit install-resolve` → `Vit.py` copied to both `Edit/` and
+  `Utility/` under `%APPDATA%\…\Fusion\Scripts\`.
+- `vit matrix add/status/rederive/promote` end-to-end with real
+  cherry-pick + no-ff merge.
+- `vit config list/get/set` round-trips ai.provider.
+- Resolve panel live-verified: screenshot of Qt panel over a real
+  timeline, `panel.log` shows `fuscript.exe` invoking the panel with
+  the Windows bootstrap fallback kicking in.
 
 ## Not yet done
 
-- Panel merge dialog (replaces CLI `input()` for non-technical users).
-- Matrix-aware panel tab.
-- Ollama provider tests that mock the HTTP layer (currently only smoke
-  tested live).
-- Tests for `vit matrix` and `vit doctor`.
+- Matrix-aware panel tab (status grid inside the Qt panel).
+- Live AI-merge against a real cross-domain conflict between two
+  branches (only mocked in tests so far).
+- `.cube` LUT round-trip fidelity test on a real Resolve grade.
+- `vit panel start` — programmatic Resolve launch + panel open.

@@ -64,6 +64,16 @@ __pycache__/
 """
 
 
+_PROJECT_GITATTRIBUTES = """\
+# Route binary color sidecars through Git LFS.
+# Harmless if the user doesn't have LFS installed — plain git ignores
+# these filter entries and stores the files normally. See `vit doctor`
+# for LFS setup hints.
+*.cube filter=lfs diff=lfs merge=lfs -text
+*.drx  filter=lfs diff=lfs merge=lfs -text
+"""
+
+
 def git_init(project_dir: str) -> None:
     """Initialize a new git repo and create .vit/ config."""
     os.makedirs(project_dir, exist_ok=True)
@@ -97,6 +107,15 @@ def git_init(project_dir: str) -> None:
     if not os.path.exists(gitignore_path):
         with open(gitignore_path, "w") as f:
             f.write(_PROJECT_GITIGNORE)
+
+    # Write .gitattributes so timeline/grades/*.cube and *.drx sidecars
+    # route through Git LFS when the user has LFS installed. Harmless
+    # even without LFS — plain git ignores the filter= entries for
+    # patterns that never match.
+    gitattributes_path = os.path.join(project_dir, ".gitattributes")
+    if not os.path.exists(gitattributes_path):
+        with open(gitattributes_path, "w") as f:
+            f.write(_PROJECT_GITATTRIBUTES)
 
 
 def git_add(project_dir: str, paths: List[str]) -> None:
