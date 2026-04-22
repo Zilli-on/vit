@@ -504,6 +504,13 @@ def cmd_doctor(args):
     sys.exit(1 if any_fails(checks) else 0)
 
 
+def cmd_matrix(args):
+    """Dispatch `vit matrix <subcmd>` to the matrix module."""
+    from .matrix import run_cli
+
+    sys.exit(run_cli(getattr(args, "matrix_cmd", None), args))
+
+
 if sys.platform == "win32":
     RESOLVE_SCRIPTS_DIR = os.path.join(
         os.environ.get("APPDATA", ""),
@@ -879,6 +886,49 @@ def main():
     # doctor
     p_doctor = subparsers.add_parser("doctor", help="Diagnose install and environment")
     p_doctor.set_defaults(func=cmd_doctor)
+
+    # matrix — per-deliverable variant manager
+    p_matrix = subparsers.add_parser(
+        "matrix", help="Manage per-deliverable variant branches"
+    )
+    matrix_sub = p_matrix.add_subparsers(dest="matrix_cmd")
+    p_matrix.set_defaults(func=cmd_matrix, matrix_cmd=None)
+
+    m_init = matrix_sub.add_parser("init", help="Initialize matrix config")
+    m_init.set_defaults(func=cmd_matrix, matrix_cmd="init")
+
+    m_add = matrix_sub.add_parser(
+        "add", help="Register (and optionally create) a variant branch"
+    )
+    m_add.add_argument("name", help="Variant branch name (e.g. 9x16-short)")
+    m_add.add_argument("--parent", default="main", help="Parent branch (default: main)")
+    m_add.add_argument(
+        "--format", default="", help="Freeform format label (e.g. 9x16-30s)"
+    )
+    m_add.add_argument(
+        "--no-branch",
+        action="store_true",
+        help="Do not create the git branch; only register it",
+    )
+    m_add.set_defaults(func=cmd_matrix, matrix_cmd="add")
+
+    m_remove = matrix_sub.add_parser(
+        "remove", help="Drop a variant registration (git branch untouched)"
+    )
+    m_remove.add_argument("name", help="Variant name to drop")
+    m_remove.set_defaults(func=cmd_matrix, matrix_cmd="remove")
+
+    m_status = matrix_sub.add_parser("status", help="Show variant grid")
+    m_status.set_defaults(func=cmd_matrix, matrix_cmd="status")
+
+    m_rederive = matrix_sub.add_parser(
+        "rederive", help="Replay parent's new commits onto a variant"
+    )
+    m_rederive.add_argument("name", help="Variant branch to rederive")
+    m_rederive.add_argument(
+        "--dry-run", action="store_true", help="Show what would be replayed, do nothing"
+    )
+    m_rederive.set_defaults(func=cmd_matrix, matrix_cmd="rederive")
 
     # clone
     p_clone = subparsers.add_parser("clone", help="Clone a remote vit project")
