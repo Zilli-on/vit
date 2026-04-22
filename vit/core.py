@@ -78,10 +78,13 @@ def git_init(project_dir: str) -> None:
     os.makedirs(vit_dir, exist_ok=True)
 
     from . import __version__
-    from .schema import CURRENT_SCHEMA_VERSION
-    from .schema.migrations import write_schema_version
+    from .schema.migrations import migrate_if_needed, write_schema_version
 
-    write_schema_version(project_dir, CURRENT_SCHEMA_VERSION, vit_version=__version__)
+    # Seed as v1 then migrate up to current. This makes init equivalent
+    # to "open an old v1 repo" — the migration chain is the single
+    # source of truth for the config shape at each version.
+    write_schema_version(project_dir, 1, vit_version=__version__)
+    migrate_if_needed(project_dir, vit_version=__version__)
 
     # Create timeline and assets directories
     timeline_dir = os.path.join(project_dir, "timeline")
@@ -310,11 +313,11 @@ def git_clone(url: str, dest_dir: str) -> None:
     config_path = os.path.join(vit_dir, "config.json")
     if not os.path.exists(config_path):
         from . import __version__
-        from .schema import CURRENT_SCHEMA_VERSION
-        from .schema.migrations import write_schema_version
+        from .schema.migrations import migrate_if_needed, write_schema_version
 
         os.makedirs(vit_dir, exist_ok=True)
-        write_schema_version(dest_dir, CURRENT_SCHEMA_VERSION, vit_version=__version__)
+        write_schema_version(dest_dir, 1, vit_version=__version__)
+        migrate_if_needed(dest_dir, vit_version=__version__)
 
 
 def git_config_get(project_dir: str, key: str) -> Optional[str]:

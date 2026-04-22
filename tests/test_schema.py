@@ -175,3 +175,74 @@ def test_migrate_if_needed_aborts_chain_on_failure(
     # schema_version on disk must still be 1 — we never half-commit.
     with open(os.path.join(project, ".vit", "config.json")) as f:
         assert json.load(f)["schema_version"] == 1
+
+
+# ---------- v2 migration (real, registered in package __init__) ----------
+
+
+def test_v2_migration_adds_ai_provider_null_on_legacy_config(project):
+    """An old v1 config (no `ai` block) must get an ai.provider=null
+    key after migrate_if_needed runs via the package's real registry."""
+    os.makedirs(os.path.join(project, ".vit"), exist_ok=True)
+    with open(os.path.join(project, ".vit", "config.json"), "w") as f:
+        json.dump({"schema_version": 1, "vit_version": "0.1.0", "nle": "resolve"}, f)
+
+    applied = migrate_if_needed(project, vit_version="test")
+    assert "v2_add_ai_block" in applied
+
+    with open(os.path.join(project, ".vit", "config.json")) as f:
+        cfg = json.load(f)
+    assert cfg["ai"] == {"provider": None}
+    assert cfg["schema_version"] == 2
+
+
+def test_v2_migration_preserves_existing_provider_choice(project):
+    """If someone already set ai.provider=ollama, migrate must preserve
+    their choice rather than clobbering it to null."""
+    with open(os.path.join(project, ".vit", "config.json"), "w") as f:
+        json.dump(
+            {
+                "schema_version": 1,
+                "vit_version": "0.1.0",
+                "nle": "resolve",
+                "ai": {"provider": "ollama"},
+            },
+            f,
+        )
+    migrate_if_needed(project, vit_version="test")
+    with open(os.path.join(project, ".vit", "config.json")) as f:
+        cfg = json.load(f)
+    assert cfg["ai"]["provider"] == "ollama"
+
+
+def test_v2_migration_repairs_corrupt_ai_value(project):
+    """If someone hand-edited ai to be a string instead of a dict, the
+    migration must replace it with a proper dict — not crash."""
+    with open(os.path.join(project, ".vit", "config.json"), "w") as f:
+        json.dump(
+            {
+                "schema_version": 1,
+                "vit_version": "0.1.0",
+                "nle": "resolve",
+                "ai": "garbage",
+            },
+            f,
+        )
+    migrate_if_needed(project, vit_version="test")
+    with open(os.path.join(project, ".vit", "config.json")) as f:
+        cfg = json.load(f)
+    assert isinstance(cfg["ai"], dict)
+    assert cfg["ai"]["provider"] is None
+
+
+def test_fresh_git_init_lands_on_current_schema(tmp_path):
+    """`git_init` should produce a project at CURRENT_SCHEMA_VERSION with
+    all migrations applied — not a bare v1 config."""
+    from vit.core import git_init
+
+    project = tmp_path / "fresh"
+    git_init(str(project))
+    with open(project / ".vit" / "config.json") as f:
+        cfg = json.load(f)
+    assert cfg["schema_version"] == CURRENT_SCHEMA_VERSION
+    assert cfg["ai"] == {"provider": None}
