@@ -5,15 +5,38 @@ from typing import Dict, List, Optional
 
 
 COMPOSITE_MODE_NAMES = {
-    0: "normal", 1: "add", 2: "subtract", 3: "difference",
-    4: "multiply", 5: "screen", 6: "overlay", 7: "hard_light",
-    8: "soft_light", 9: "darken", 10: "lighten", 11: "color_dodge",
-    12: "color_burn", 13: "exclusion", 14: "hue", 15: "saturate",
-    16: "colorize", 17: "luma_mask", 18: "divide", 19: "linear_dodge",
-    20: "linear_burn", 21: "linear_light", 22: "vivid_light",
-    23: "pin_light", 24: "hard_mix", 25: "lighter_color",
-    26: "darker_color", 27: "foreground", 28: "alpha",
-    29: "inverted_alpha", 30: "lum", 31: "inverted_lum",
+    0: "normal",
+    1: "add",
+    2: "subtract",
+    3: "difference",
+    4: "multiply",
+    5: "screen",
+    6: "overlay",
+    7: "hard_light",
+    8: "soft_light",
+    9: "darken",
+    10: "lighten",
+    11: "color_dodge",
+    12: "color_burn",
+    13: "exclusion",
+    14: "hue",
+    15: "saturate",
+    16: "colorize",
+    17: "luma_mask",
+    18: "divide",
+    19: "linear_dodge",
+    20: "linear_burn",
+    21: "linear_light",
+    22: "vivid_light",
+    23: "pin_light",
+    24: "hard_mix",
+    25: "lighter_color",
+    26: "darker_color",
+    27: "foreground",
+    28: "alpha",
+    29: "inverted_alpha",
+    30: "lum",
+    31: "inverted_lum",
 }
 
 DYNAMIC_ZOOM_EASE_NAMES = {
@@ -141,6 +164,7 @@ class SpeedChange:
         motion_estimation: Motion estimation quality for optical flow
             (0=project, 1..5 = standard_faster through speed_warp).
     """
+
     speed_percent: float = 100.0
     retime_process: int = 0
     motion_estimation: int = 0
@@ -179,6 +203,7 @@ class SpeedChange:
 @dataclass
 class TextProperties:
     """Text properties for generator/title clips (Text+, Text3D, etc.)."""
+
     styled_text: str = ""
     font: str = ""
     size: float = 0.0
@@ -386,20 +411,21 @@ class ColorNodeGrade:
     Captures CDL (Color Decision List) values and primary color wheels
     that Resolve exposes via its scripting API.
     """
+
     index: int = 1
     label: str = ""
     lut: str = ""
 
     # CDL values (ASC-CDL standard: slope * input + offset) ^ power
-    slope: Optional[List[float]] = None      # [R, G, B] multipliers (default 1,1,1)
-    offset: Optional[List[float]] = None     # [R, G, B] offsets (default 0,0,0)
-    power: Optional[List[float]] = None      # [R, G, B] gamma (default 1,1,1)
-    saturation: Optional[float] = None       # Overall saturation (default 1.0)
+    slope: Optional[List[float]] = None  # [R, G, B] multipliers (default 1,1,1)
+    offset: Optional[List[float]] = None  # [R, G, B] offsets (default 0,0,0)
+    power: Optional[List[float]] = None  # [R, G, B] gamma (default 1,1,1)
+    saturation: Optional[float] = None  # Overall saturation (default 1.0)
 
     # Primary color wheels (Resolve's Lift/Gamma/Gain/Offset wheels)
-    lift: Optional[Dict[str, float]] = None    # {"r": 0, "g": 0, "b": 0, "y": 0}
-    gamma: Optional[Dict[str, float]] = None   # {"r": 0, "g": 0, "b": 0, "y": 0}
-    gain: Optional[Dict[str, float]] = None    # {"r": 1, "g": 1, "b": 1, "y": 1}
+    lift: Optional[Dict[str, float]] = None  # {"r": 0, "g": 0, "b": 0, "y": 0}
+    gamma: Optional[Dict[str, float]] = None  # {"r": 0, "g": 0, "b": 0, "y": 0}
+    gain: Optional[Dict[str, float]] = None  # {"r": 1, "g": 1, "b": 1, "y": 1}
     color_offset: Optional[Dict[str, float]] = None  # {"r": 0, "g": 0, "b": 0, "y": 0}
 
     # Contrast / Pivot / Hue / Saturation adjustments
@@ -441,16 +467,42 @@ class ColorNodeGrade:
     def to_dict(self) -> dict:
         d: dict = {"index": self.index, "label": self.label, "lut": self.lut}
         # Only include color values that were actually read (not None)
-        for key in ["slope", "offset", "power", "saturation",
-                     "lift", "gamma", "gain", "color_offset",
-                     "contrast", "pivot", "hue", "color_boost",
-                     "lift_r", "lift_g", "lift_b", "lift_m",
-                     "gamma_r", "gamma_g", "gamma_b", "gamma_m",
-                     "gain_r", "gain_g", "gain_b", "gain_m",
-                     "offset_r", "offset_g", "offset_b", "offset_m",
-                     "temperature", "tint", "sharpness",
-                     "noise_reduction_luma", "noise_reduction_chroma",
-                     "tools"]:
+        for key in [
+            "slope",
+            "offset",
+            "power",
+            "saturation",
+            "lift",
+            "gamma",
+            "gain",
+            "color_offset",
+            "contrast",
+            "pivot",
+            "hue",
+            "color_boost",
+            "lift_r",
+            "lift_g",
+            "lift_b",
+            "lift_m",
+            "gamma_r",
+            "gamma_g",
+            "gamma_b",
+            "gamma_m",
+            "gain_r",
+            "gain_g",
+            "gain_b",
+            "gain_m",
+            "offset_r",
+            "offset_g",
+            "offset_b",
+            "offset_m",
+            "temperature",
+            "tint",
+            "sharpness",
+            "noise_reduction_luma",
+            "noise_reduction_chroma",
+            "tools",
+        ]:
             val = getattr(self, key)
             if val is not None:
                 d[key] = val
@@ -507,6 +559,7 @@ class ColorGrade:
     contrast/hue/saturation), structural info, and optionally a DRX
     still for full-fidelity binary backup.
     """
+
     num_nodes: int = 1
     nodes: List[ColorNodeGrade] = field(default_factory=list)
     version_name: str = ""
@@ -604,8 +657,8 @@ class TimelineMetadata:
     width: int = 1920
     height: int = 1080
     start_timecode: str = "01:00:00:00"
-    video_track_count: int = 1
-    audio_track_count: int = 1
+    video_track_count: int = 0
+    audio_track_count: int = 0
 
     def to_dict(self) -> dict:
         return {
@@ -639,6 +692,7 @@ class TimelineMetadata:
 @dataclass
 class Timeline:
     """Complete timeline state, split into domain files."""
+
     metadata: TimelineMetadata = field(default_factory=TimelineMetadata)
     video_tracks: List[VideoTrack] = field(default_factory=list)
     audio_tracks: List[AudioTrack] = field(default_factory=list)
