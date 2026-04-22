@@ -7,6 +7,7 @@ from typing import List, Optional, Tuple
 
 class GitError(Exception):
     """Raised when a git command fails."""
+
     pass
 
 
@@ -67,12 +68,17 @@ def git_init(project_dir: str) -> None:
     """Initialize a new git repo and create .vit/ config."""
     os.makedirs(project_dir, exist_ok=True)
     _run(["init"], cwd=project_dir)
+    # Normalize default branch to 'main' independent of the user's global
+    # init.defaultBranch setting (Windows git defaults to 'master', breaking
+    # docs and tests that assume 'main').
+    _run(["symbolic-ref", "HEAD", "refs/heads/main"], cwd=project_dir, check=False)
 
     # Create .vit config directory
     vit_dir = os.path.join(project_dir, ".vit")
     os.makedirs(vit_dir, exist_ok=True)
 
     import json
+
     config = {"version": "0.1.0", "nle": "resolve"}
     config_path = os.path.join(vit_dir, "config.json")
     with open(config_path, "w") as f:
@@ -167,7 +173,9 @@ def git_revert(project_dir: str) -> None:
     _run(["revert", "HEAD", "--no-edit"], cwd=project_dir)
 
 
-def git_push(project_dir: str, remote: str = "origin", branch: Optional[str] = None) -> str:
+def git_push(
+    project_dir: str, remote: str = "origin", branch: Optional[str] = None
+) -> str:
     """Push to remote."""
     args = ["push", remote]
     if branch:
@@ -176,7 +184,9 @@ def git_push(project_dir: str, remote: str = "origin", branch: Optional[str] = N
     return result.stdout + result.stderr
 
 
-def git_pull(project_dir: str, remote: str = "origin", branch: Optional[str] = None) -> str:
+def git_pull(
+    project_dir: str, remote: str = "origin", branch: Optional[str] = None
+) -> str:
     """Pull from remote."""
     args = ["pull", remote]
     if branch:
@@ -220,7 +230,9 @@ def git_merge_base(project_dir: str, ref1: str, ref2: str) -> Optional[str]:
 
 def git_list_conflicted_files(project_dir: str) -> List[str]:
     """List files with merge conflicts."""
-    result = _run(["diff", "--name-only", "--diff-filter=U"], cwd=project_dir, check=False)
+    result = _run(
+        ["diff", "--name-only", "--diff-filter=U"], cwd=project_dir, check=False
+    )
     return [f for f in result.stdout.splitlines() if f.strip()]
 
 
@@ -289,6 +301,7 @@ def git_clone(url: str, dest_dir: str) -> None:
 
     # Ensure .vit/config.json exists so the cloned dir is recognized as a vit project
     import json
+
     vit_dir = os.path.join(dest_dir, ".vit")
     config_path = os.path.join(vit_dir, "config.json")
     if not os.path.exists(config_path):
@@ -310,7 +323,9 @@ def git_config_set(project_dir: str, key: str, value: str) -> None:
     _run(["config", key, value], cwd=project_dir)
 
 
-def git_push_set_upstream(project_dir: str, remote: str = "origin", branch: Optional[str] = None) -> str:
+def git_push_set_upstream(
+    project_dir: str, remote: str = "origin", branch: Optional[str] = None
+) -> str:
     """Push and set upstream tracking branch."""
     if branch is None:
         branch = git_current_branch(project_dir)
@@ -419,8 +434,12 @@ def git_log_with_topology(project_dir: str, max_count: int = 30) -> dict:
     head_hash = head_result.stdout.strip()[:7] if head_result.returncode == 0 else ""
 
     # Get current branch
-    current_result = _run(["rev-parse", "--abbrev-ref", "HEAD"], cwd=project_dir, check=False)
-    current_branch = current_result.stdout.strip() if current_result.returncode == 0 else "main"
+    current_result = _run(
+        ["rev-parse", "--abbrev-ref", "HEAD"], cwd=project_dir, check=False
+    )
+    current_branch = (
+        current_result.stdout.strip() if current_result.returncode == 0 else "main"
+    )
 
     # Determine the main branch name (main or master)
     main_branch = "main"
@@ -496,14 +515,16 @@ def git_log_with_topology(project_dir: str, max_count: int = 30) -> dict:
 
         branch_set.add(branch)
 
-        commits.append({
-            "hash": hash_short,
-            "parents": parents,
-            "message": message,
-            "branch": branch,
-            "is_head": is_head or hash_short == head_hash,
-            "is_main_commit": is_main_commit,  # For visual positioning
-        })
+        commits.append(
+            {
+                "hash": hash_short,
+                "parents": parents,
+                "message": message,
+                "branch": branch,
+                "is_head": is_head or hash_short == head_hash,
+                "is_main_commit": is_main_commit,  # For visual positioning
+            }
+        )
 
     return {
         "commits": commits,

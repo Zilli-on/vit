@@ -1,9 +1,7 @@
 """Tests for ai_merge.py — AI-powered semantic merge resolution."""
 
 import json
-import os
-import tempfile
-from unittest.mock import MagicMock, patch
+from unittest.mock import patch
 
 import pytest
 
@@ -25,7 +23,11 @@ class TestMergeOption:
     def test_to_dict(self):
         opt = MergeOption(key="A", label="Keep ours", description="Use current branch")
         result = opt.to_dict()
-        assert result == {"key": "A", "label": "Keep ours", "description": "Use current branch"}
+        assert result == {
+            "key": "A",
+            "label": "Keep ours",
+            "description": "Use current branch",
+        }
 
     def test_from_dict(self):
         data = {"key": "B", "label": "Keep theirs", "description": "Use incoming"}
@@ -91,7 +93,12 @@ class TestMergeAnalysis:
         analysis = MergeAnalysis(
             summary="Simple merge",
             decisions=[
-                MergeDecision(domain="cuts", action="accept_theirs", confidence="high", reasoning=""),
+                MergeDecision(
+                    domain="cuts",
+                    action="accept_theirs",
+                    confidence="high",
+                    reasoning="",
+                ),
             ],
         )
         assert analysis.needs_user_input() is False
@@ -100,8 +107,18 @@ class TestMergeAnalysis:
         analysis = MergeAnalysis(
             summary="Complex merge",
             decisions=[
-                MergeDecision(domain="cuts", action="accept_theirs", confidence="high", reasoning=""),
-                MergeDecision(domain="color", action="needs_user_input", confidence="low", reasoning=""),
+                MergeDecision(
+                    domain="cuts",
+                    action="accept_theirs",
+                    confidence="high",
+                    reasoning="",
+                ),
+                MergeDecision(
+                    domain="color",
+                    action="needs_user_input",
+                    confidence="low",
+                    reasoning="",
+                ),
             ],
         )
         assert analysis.needs_user_input() is True
@@ -110,9 +127,24 @@ class TestMergeAnalysis:
         analysis = MergeAnalysis(
             summary="Mixed merge",
             decisions=[
-                MergeDecision(domain="cuts", action="accept_theirs", confidence="high", reasoning=""),
-                MergeDecision(domain="color", action="needs_user_input", confidence="low", reasoning=""),
-                MergeDecision(domain="audio", action="needs_user_input", confidence="low", reasoning=""),
+                MergeDecision(
+                    domain="cuts",
+                    action="accept_theirs",
+                    confidence="high",
+                    reasoning="",
+                ),
+                MergeDecision(
+                    domain="color",
+                    action="needs_user_input",
+                    confidence="low",
+                    reasoning="",
+                ),
+                MergeDecision(
+                    domain="audio",
+                    action="needs_user_input",
+                    confidence="low",
+                    reasoning="",
+                ),
             ],
         )
         questions = analysis.get_questions()
@@ -124,8 +156,18 @@ class TestMergeAnalysis:
         analysis = MergeAnalysis(
             summary="Mixed merge",
             decisions=[
-                MergeDecision(domain="cuts", action="accept_theirs", confidence="high", reasoning=""),
-                MergeDecision(domain="color", action="needs_user_input", confidence="low", reasoning=""),
+                MergeDecision(
+                    domain="cuts",
+                    action="accept_theirs",
+                    confidence="high",
+                    reasoning="",
+                ),
+                MergeDecision(
+                    domain="color",
+                    action="needs_user_input",
+                    confidence="low",
+                    reasoning="",
+                ),
             ],
         )
         auto = analysis.get_auto_resolved()
@@ -136,7 +178,12 @@ class TestMergeAnalysis:
         data = {
             "summary": "Test merge",
             "decisions": [
-                {"domain": "cuts", "action": "accept_ours", "confidence": "high", "reasoning": "no changes"},
+                {
+                    "domain": "cuts",
+                    "action": "accept_ours",
+                    "confidence": "high",
+                    "reasoning": "no changes",
+                },
             ],
             "resolved": {"cuts": {"video_tracks": []}},
         }
@@ -182,14 +229,18 @@ class TestBuildAnalysisPrompt:
         assert '"video_tracks"' in prompt
 
     def test_includes_conflicted_files(self):
-        prompt = _build_analysis_prompt({}, {}, {}, [], ["timeline/cuts.json", "timeline/color.json"])
+        prompt = _build_analysis_prompt(
+            {}, {}, {}, [], ["timeline/cuts.json", "timeline/color.json"]
+        )
         assert "GIT CONFLICTED FILES" in prompt
         assert "timeline/cuts.json" in prompt
         assert "timeline/color.json" in prompt
 
     def test_includes_validation_issues(self):
         issues = [
-            ValidationIssue(severity="error", category="orphaned_ref", message="Test issue"),
+            ValidationIssue(
+                severity="error", category="orphaned_ref", message="Test issue"
+            ),
         ]
         prompt = _build_analysis_prompt({}, {}, {}, issues, [])
         assert "DETECTED VALIDATION ISSUES" in prompt
@@ -260,19 +311,22 @@ class TestDetectOverlappingDomains:
 
 
 class TestAiAnalyzeMerge:
-    @patch("vit.ai_merge._get_genai_model")
-    def test_successful_analysis(self, mock_get_model):
-        mock_model = MagicMock()
-        mock_response = MagicMock()
-        mock_response.text = json.dumps({
-            "summary": "Editor made cuts, colorist graded",
-            "decisions": [
-                {"domain": "cuts", "action": "accept_theirs", "confidence": "high", "reasoning": "Only theirs changed"},
-            ],
-            "resolved": {"cuts": {"video_tracks": []}},
-        })
-        mock_model.generate_content.return_value = mock_response
-        mock_get_model.return_value = mock_model
+    @patch("vit.ai_merge._ai_complete")
+    def test_successful_analysis(self, mock_complete):
+        mock_complete.return_value = json.dumps(
+            {
+                "summary": "Editor made cuts, colorist graded",
+                "decisions": [
+                    {
+                        "domain": "cuts",
+                        "action": "accept_theirs",
+                        "confidence": "high",
+                        "reasoning": "Only theirs changed",
+                    },
+                ],
+                "resolved": {"cuts": {"video_tracks": []}},
+            }
+        )
 
         result = ai_analyze_merge({}, {}, {}, [], [])
 
@@ -281,35 +335,27 @@ class TestAiAnalyzeMerge:
         assert len(result.decisions) == 1
         assert result.decisions[0].domain == "cuts"
 
-    @patch("vit.ai_merge._get_genai_model")
-    def test_invalid_json_returns_none(self, mock_get_model):
-        mock_model = MagicMock()
-        mock_response = MagicMock()
-        mock_response.text = "not valid json"
-        mock_model.generate_content.return_value = mock_response
-        mock_get_model.return_value = mock_model
-
+    @patch("vit.ai_merge._ai_complete")
+    def test_invalid_json_returns_none(self, mock_complete):
+        mock_complete.return_value = "not valid json"
         result = ai_analyze_merge({}, {}, {}, [], [])
         assert result is None
 
-    @patch("vit.ai_merge._get_genai_model")
-    def test_api_error_returns_none(self, mock_get_model):
-        mock_get_model.side_effect = ValueError("No API key")
-
+    @patch("vit.ai_merge._ai_complete")
+    def test_api_error_returns_none(self, mock_complete):
+        mock_complete.return_value = None  # provider unavailable
         result = ai_analyze_merge({}, {}, {}, [], [])
         assert result is None
 
 
 class TestAiResolveClarifications:
-    @patch("vit.ai_merge._get_genai_model")
-    def test_successful_clarification(self, mock_get_model):
-        mock_model = MagicMock()
-        mock_response = MagicMock()
-        mock_response.text = json.dumps({
-            "color": {"grades": {"item_001": {"saturation": 1.2}}},
-        })
-        mock_model.generate_content.return_value = mock_response
-        mock_get_model.return_value = mock_model
+    @patch("vit.ai_merge._ai_complete")
+    def test_successful_clarification(self, mock_complete):
+        mock_complete.return_value = json.dumps(
+            {
+                "color": {"grades": {"item_001": {"saturation": 1.2}}},
+            }
+        )
 
         analysis = MergeAnalysis(
             summary="Test",
@@ -330,45 +376,64 @@ class TestAiResolveClarifications:
         assert result is not None
         assert "color" in result
 
-    @patch("vit.ai_merge._get_genai_model")
-    def test_no_questions_returns_empty(self, mock_get_model):
+    @patch("vit.ai_merge._ai_complete")
+    def test_no_questions_returns_empty(self, mock_complete):
         analysis = MergeAnalysis(
             summary="Test",
             decisions=[
-                MergeDecision(domain="cuts", action="accept_theirs", confidence="high", reasoning=""),
+                MergeDecision(
+                    domain="cuts",
+                    action="accept_theirs",
+                    confidence="high",
+                    reasoning="",
+                ),
             ],
         )
 
         result = ai_resolve_clarifications(analysis, {}, {}, {})
         assert result == {}
-        mock_get_model.assert_not_called()
+        mock_complete.assert_not_called()
 
 
 class TestIntegration:
-    """Integration tests with mocked Gemini API."""
+    """Integration tests with mocked AI provider."""
 
-    @patch("vit.ai_merge._get_genai_model")
-    def test_full_auto_resolve_flow(self, mock_get_model):
+    @patch("vit.ai_merge._ai_complete")
+    def test_full_auto_resolve_flow(self, mock_complete):
         """Test a merge where AI auto-resolves everything (no user input needed)."""
-        mock_model = MagicMock()
-        mock_response = MagicMock()
-        mock_response.text = json.dumps({
-            "summary": "Clean merge: editor changed cuts, colorist changed color",
-            "decisions": [
-                {"domain": "cuts", "action": "accept_theirs", "confidence": "high", "reasoning": "Only incoming branch modified cuts"},
-                {"domain": "color", "action": "accept_ours", "confidence": "high", "reasoning": "Only current branch modified color"},
-            ],
-            "resolved": {
-                "cuts": {"video_tracks": [{"index": 1, "items": []}]},
-                "color": {"grades": {"item_001": {"saturation": 1.1}}},
-            },
-        })
-        mock_model.generate_content.return_value = mock_response
-        mock_get_model.return_value = mock_model
+        mock_complete.return_value = json.dumps(
+            {
+                "summary": "Clean merge: editor changed cuts, colorist changed color",
+                "decisions": [
+                    {
+                        "domain": "cuts",
+                        "action": "accept_theirs",
+                        "confidence": "high",
+                        "reasoning": "Only incoming branch modified cuts",
+                    },
+                    {
+                        "domain": "color",
+                        "action": "accept_ours",
+                        "confidence": "high",
+                        "reasoning": "Only current branch modified color",
+                    },
+                ],
+                "resolved": {
+                    "cuts": {"video_tracks": [{"index": 1, "items": []}]},
+                    "color": {"grades": {"item_001": {"saturation": 1.1}}},
+                },
+            }
+        )
 
         base = {"cuts": {"video_tracks": []}, "color": {"grades": {}}}
-        ours = {"cuts": {"video_tracks": []}, "color": {"grades": {"item_001": {"saturation": 1.1}}}}
-        theirs = {"cuts": {"video_tracks": [{"index": 1, "items": []}]}, "color": {"grades": {}}}
+        ours = {
+            "cuts": {"video_tracks": []},
+            "color": {"grades": {"item_001": {"saturation": 1.1}}},
+        }
+        theirs = {
+            "cuts": {"video_tracks": [{"index": 1, "items": []}]},
+            "color": {"grades": {}},
+        }
 
         analysis = ai_analyze_merge(base, ours, theirs, [], [])
 
@@ -376,32 +441,43 @@ class TestIntegration:
         assert not analysis.needs_user_input()
         assert len(analysis.resolved) == 2
 
-    @patch("vit.ai_merge._get_genai_model")
-    def test_mixed_flow_with_questions(self, mock_get_model):
+    @patch("vit.ai_merge._ai_complete")
+    def test_mixed_flow_with_questions(self, mock_complete):
         """Test a merge where some domains need user input."""
-        mock_model = MagicMock()
-        mock_response = MagicMock()
-        mock_response.text = json.dumps({
-            "summary": "Both branches modified color grades",
-            "decisions": [
-                {"domain": "cuts", "action": "accept_theirs", "confidence": "high", "reasoning": "Only theirs changed"},
-                {
-                    "domain": "color",
-                    "action": "needs_user_input",
-                    "confidence": "low",
-                    "reasoning": "Both branches changed saturation for clip item_001",
-                    "options": [
-                        {"key": "A", "label": "Keep ours (1.2)", "description": "Warmer tones"},
-                        {"key": "B", "label": "Keep theirs (0.9)", "description": "Cooler tones"},
-                    ],
+        mock_complete.return_value = json.dumps(
+            {
+                "summary": "Both branches modified color grades",
+                "decisions": [
+                    {
+                        "domain": "cuts",
+                        "action": "accept_theirs",
+                        "confidence": "high",
+                        "reasoning": "Only theirs changed",
+                    },
+                    {
+                        "domain": "color",
+                        "action": "needs_user_input",
+                        "confidence": "low",
+                        "reasoning": "Both branches changed saturation for clip item_001",
+                        "options": [
+                            {
+                                "key": "A",
+                                "label": "Keep ours (1.2)",
+                                "description": "Warmer tones",
+                            },
+                            {
+                                "key": "B",
+                                "label": "Keep theirs (0.9)",
+                                "description": "Cooler tones",
+                            },
+                        ],
+                    },
+                ],
+                "resolved": {
+                    "cuts": {"video_tracks": [{"index": 1, "items": []}]},
                 },
-            ],
-            "resolved": {
-                "cuts": {"video_tracks": [{"index": 1, "items": []}]},
-            },
-        })
-        mock_model.generate_content.return_value = mock_response
-        mock_get_model.return_value = mock_model
+            }
+        )
 
         analysis = ai_analyze_merge({}, {}, {}, [], [])
 
