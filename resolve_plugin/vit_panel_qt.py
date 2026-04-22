@@ -6,45 +6,74 @@ that require the DaVinci Resolve API (serialize, deserialize).
 
 Usage: python vit_panel_qt.py --project-dir /path/to/project --port 12345
 """
+
 import argparse
 import json
 import os
 import socket
 import sys
 import threading
-import traceback
 
 from PySide6.QtCore import (
-    Qt, Signal, QPropertyAnimation, QRect, QEasingCurve, QTimer, QSize, QByteArray, QRectF
+    Qt,
+    Signal,
+    QPropertyAnimation,
+    QRect,
+    QEasingCurve,
+    QTimer,
+    QSize,
+    QByteArray,
+    QRectF,
 )
 from PySide6.QtGui import (
-    QFont, QFontMetrics, QColor, QPalette, QIcon, QGuiApplication, QPainter,
-    QPixmap, QPen, QBrush, QPainterPath
+    QFont,
+    QFontMetrics,
+    QColor,
+    QIcon,
+    QGuiApplication,
+    QPainter,
+    QPixmap,
+    QPen,
+    QBrush,
+    QPainterPath,
 )
 from PySide6.QtWidgets import (
-    QApplication, QMainWindow, QWidget, QVBoxLayout, QHBoxLayout,
-    QPushButton, QLabel, QTextEdit, QLineEdit, QDialog, QDialogButtonBox,
-    QListWidget, QListWidgetItem, QFrame, QSizePolicy, QSpacerItem,
-    QScrollArea, QComboBox, QGridLayout, QListView,
+    QApplication,
+    QMainWindow,
+    QWidget,
+    QVBoxLayout,
+    QHBoxLayout,
+    QPushButton,
+    QLabel,
+    QTextEdit,
+    QLineEdit,
+    QDialog,
+    QDialogButtonBox,
+    QListWidget,
+    QFrame,
+    QSizePolicy,
+    QScrollArea,
+    QComboBox,
+    QListView,
 )
 from PySide6.QtSvg import QSvgRenderer
 
 # -- Colors / Theme (from SVG mockup) -----------------------------------------
 
-ORANGE = "#FFB463"           # Buttons, accent
-ORANGE_LIGHT = "#FFD2A1"     # Panels, backgrounds
-ORANGE_DARK = "#E07603"      # Graph lines, icons
+ORANGE = "#FFB463"  # Buttons, accent
+ORANGE_LIGHT = "#FFD2A1"  # Panels, backgrounds
+ORANGE_DARK = "#E07603"  # Graph lines, icons
 ORANGE_HOVER = "#FFCA8A"
 ORANGE_PRESSED = "#E89F4A"
 
-BG_DARK = "#1C1C1C"          # Main background
-BG_PANEL = "#2C2C2C"         # Input fields
-BG_INPUT = "#1C1C1C"         # Input background
-BORDER = "#464646"           # Borders
+BG_DARK = "#1C1C1C"  # Main background
+BG_PANEL = "#2C2C2C"  # Input fields
+BG_INPUT = "#1C1C1C"  # Input background
+BORDER = "#464646"  # Borders
 
-TEXT_PRIMARY = "#D9D9D9"     # Primary text
-TEXT_DARK = "#4A4A4A"        # Secondary/muted
-TEXT_BLACK = "#000000"       # On orange buttons
+TEXT_PRIMARY = "#D9D9D9"  # Primary text
+TEXT_DARK = "#4A4A4A"  # Secondary/muted
+TEXT_BLACK = "#000000"  # On orange buttons
 TEXT_BRIGHT = "#FFFFFF"
 
 SUCCESS = "#4EC9B0"
@@ -52,9 +81,11 @@ ERROR = "#F44747"
 
 # -- Logging ------------------------------------------------------------------
 
+
 def _log(msg):
     """Print log message with prefix."""
     print(f"[vit] {msg}")
+
 
 # -- SVG Icons ----------------------------------------------------------------
 
@@ -266,9 +297,12 @@ QListWidget::item:hover {{
 
 # -- Utility Functions --------------------------------------------------------
 
-def svg_to_pixmap(svg_str: str, color: str, size: int = 16, dpr: float = 1.0) -> QPixmap:
+
+def svg_to_pixmap(
+    svg_str: str, color: str, size: int = 16, dpr: float = 1.0
+) -> QPixmap:
     """Render SVG to pixmap. size=logical size; dpr>1 yields high-res for Retina."""
-    svg_data = svg_str.format(color=color).encode('utf-8')
+    svg_data = svg_str.format(color=color).encode("utf-8")
     renderer = QSvgRenderer(QByteArray(svg_data))
     px = max(1, int(size * dpr))
     pixmap = QPixmap(px, px)
@@ -301,6 +335,7 @@ def svg_to_pixmap_for_label(svg_str: str, color: str, size: int = 16) -> QPixmap
 
 
 # -- IPC Client ---------------------------------------------------------------
+
 
 class IPCClient:
     """Newline-delimited JSON over TCP."""
@@ -339,6 +374,7 @@ class IPCClient:
 
 
 # -- Dialogs ------------------------------------------------------------------
+
 
 class InputDialog(QDialog):
     """Styled text input dialog."""
@@ -409,6 +445,7 @@ class ChoiceDialog(QDialog):
 
 
 # -- Collapsible Section Widget -----------------------------------------------
+
 
 class CollapsibleSection(QWidget):
     """A collapsible section with header and content area."""
@@ -485,10 +522,11 @@ class CollapsibleSection(QWidget):
 # -- Actions Section Widget ---------------------------------------------------
 # Uses inline inputs instead of modal dialogs to avoid macOS crash with QInputDialog.
 
+
 class ActionsSection(QWidget):
     """Quick actions with inline inputs (no modal dialogs)."""
 
-    new_branch_requested = Signal(str)   # branch name
+    new_branch_requested = Signal(str)  # branch name
     switch_branch_requested = Signal(str)
     merge_branch_requested = Signal(str)
     push_requested = Signal()
@@ -697,6 +735,7 @@ class ActionsSection(QWidget):
 
 # -- Change Item Widget -------------------------------------------------------
 
+
 class ChangeItemWidget(QWidget):
     """A single change item with icon and name (mockup-aligned)."""
 
@@ -736,6 +775,7 @@ class ChangeItemWidget(QWidget):
 
 
 # -- Changes Section Widget ---------------------------------------------------
+
 
 class ChangesSection(QWidget):
     """The CHANGES section with commit input and file list (mockup-aligned)."""
@@ -902,7 +942,7 @@ GRAPH_COLOR_LIGHT = "#FFBA6B40"  # 25% opacity for branch lines
 
 # Graph layout constants
 GRAPH_ROW_HEIGHT = 42
-GRAPH_LANE_WIDTH = 30   # Horizontal distance between lanes
+GRAPH_LANE_WIDTH = 30  # Horizontal distance between lanes
 GRAPH_FIRST_LANE_X = 15  # X position of lane 0 (main)
 GRAPH_NODE_SIZE = 10
 
@@ -911,17 +951,17 @@ def _load_graph_assets():
     """Load SVG assets for the graph. Returns dict of QSvgRenderer objects."""
     assets_dir = os.path.join(os.path.dirname(__file__), "graph_assets")
     assets = {}
-    
+
     # Orange node (filled) - 4.svg
     path = os.path.join(assets_dir, "4.svg")
     if os.path.exists(path):
         assets["node"] = QSvgRenderer(path)
-    
+
     # Orange ring (HEAD) - 5.svg
     path = os.path.join(assets_dir, "5.svg")
     if os.path.exists(path):
         assets["ring"] = QSvgRenderer(path)
-    
+
     return assets
 
 
@@ -942,7 +982,7 @@ class CommitGraphWidget(QWidget):
     def __init__(self, parent=None):
         super().__init__(parent)
         self._commits = []
-        self._lanes = []      # lane index for each commit
+        self._lanes = []  # lane index for each commit
         self._max_lanes = 1
         self._head = ""
         self.setMinimumHeight(350)
@@ -1154,7 +1194,7 @@ class CommitGraphWidget(QWidget):
             x - GRAPH_NODE_SIZE // 2,
             y - GRAPH_NODE_SIZE // 2,
             GRAPH_NODE_SIZE,
-            GRAPH_NODE_SIZE
+            GRAPH_NODE_SIZE,
         )
 
         asset_key = "ring" if is_head else "node"
@@ -1203,7 +1243,9 @@ class CommitGraphWidget(QWidget):
         pill_y = y - pill_height // 2
         painter.setPen(Qt.NoPen)
         painter.setBrush(QBrush(color))
-        painter.drawRoundedRect(x, pill_y, pill_width, pill_height, pill_height // 2, pill_height // 2)
+        painter.drawRoundedRect(
+            x, pill_y, pill_width, pill_height, pill_height // 2, pill_height // 2
+        )
 
         # Draw text centered in pill
         text_y = pill_y + (pill_height + fm.ascent() - fm.descent()) // 2
@@ -1257,7 +1299,180 @@ class CommitGraphSection(QWidget):
         self._graph_widget.set_data(commits, None, head)
 
 
+# -- Matrix section -----------------------------------------------------------
+
+
+class MatrixSection(QWidget):
+    """Read-only grid of deliverable variants registered in
+    .vit/variants.json. Useful as an at-a-glance status for social /
+    multi-format workflows (9x16, 1x1, 16x9 from the same hero cut).
+    Mutation (add / remove / rederive / promote) stays in the CLI —
+    this section just surfaces the state."""
+
+    refresh_requested = Signal()
+
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self._project_dir = ""
+
+        layout = QVBoxLayout(self)
+        layout.setSpacing(8)
+        layout.setContentsMargins(0, 0, 0, 0)
+
+        # Refresh button
+        btn_row = QHBoxLayout()
+        btn_row.setSpacing(0)
+        btn_row.addStretch()
+        self._refresh_btn = QPushButton("Refresh")
+        self._refresh_btn.setCursor(Qt.PointingHandCursor)
+        self._refresh_btn.clicked.connect(self.refresh_requested.emit)
+        self._refresh_btn.setFixedHeight(28)
+        self._refresh_btn.setStyleSheet(f"""
+            QPushButton {{
+                background-color: transparent;
+                color: {TEXT_PRIMARY};
+                border: 1px solid {BORDER};
+                border-radius: 4px;
+                padding: 2px 12px;
+                font-size: 12px;
+            }}
+            QPushButton:hover {{
+                border-color: {ORANGE};
+                color: {ORANGE};
+            }}
+        """)
+        btn_row.addWidget(self._refresh_btn)
+        layout.addLayout(btn_row)
+
+        # Content container — populated by refresh()
+        self._body = QWidget()
+        self._body_layout = QVBoxLayout(self._body)
+        self._body_layout.setSpacing(4)
+        self._body_layout.setContentsMargins(0, 0, 0, 0)
+        layout.addWidget(self._body)
+
+        self._render_empty("No project loaded.")
+
+    def set_project_dir(self, project_dir: str) -> None:
+        self._project_dir = project_dir
+        self.refresh()
+
+    def refresh(self) -> None:
+        # Clear body
+        while self._body_layout.count():
+            item = self._body_layout.takeAt(0)
+            w = item.widget()
+            if w is not None:
+                w.deleteLater()
+
+        if not self._project_dir:
+            self._render_empty("No project loaded.")
+            return
+
+        path = os.path.join(self._project_dir, ".vit", "variants.json")
+        if not os.path.exists(path):
+            self._render_empty(
+                "No variants registered.\nUse `vit matrix add <name>` in Terminal."
+            )
+            return
+        try:
+            with open(path, encoding="utf-8") as f:
+                cfg = json.load(f) or {}
+        except (OSError, json.JSONDecodeError):
+            self._render_empty("variants.json unreadable.")
+            return
+
+        variants = cfg.get("variants") or {}
+        if not variants:
+            self._render_empty(
+                "No variants registered.\nUse `vit matrix add <name>` in Terminal."
+            )
+            return
+
+        # Header row
+        header = QHBoxLayout()
+        header.setSpacing(8)
+        for text, stretch in (
+            ("VARIANT", 3),
+            ("FORMAT", 2),
+            ("BEHIND", 1),
+            ("REDERIVE", 2),
+        ):
+            lbl = QLabel(text)
+            lbl.setStyleSheet(f"color: {TEXT_DARK}; font-size: 10px; font-weight: 600;")
+            header.addWidget(lbl, stretch=stretch)
+        self._body_layout.addLayout(header)
+
+        for name, v in sorted(variants.items()):
+            self._body_layout.addWidget(
+                self._row_widget(
+                    name=name,
+                    fmt=v.get("format", "-") or "-",
+                    behind=self._behind_for(name, v.get("parent", "main")),
+                    last=self._humanize(v.get("last_rederive_at", 0.0)),
+                )
+            )
+
+    def _behind_for(self, variant: str, parent: str) -> str:
+        """Delegate to vit.matrix._commits_behind so the UI + CLI agree."""
+        try:
+            from vit.matrix import _commits_behind
+
+            return str(_commits_behind(self._project_dir, variant, parent))
+        except Exception:
+            return "?"
+
+    @staticmethod
+    def _humanize(ts) -> str:
+        try:
+            ts = float(ts)
+        except (TypeError, ValueError):
+            return "never"
+        if ts <= 0:
+            return "never"
+        import time as _t
+
+        delta = _t.time() - ts
+        if delta < 60:
+            return "just now"
+        if delta < 3600:
+            return f"{int(delta / 60)}m ago"
+        if delta < 86400:
+            return f"{int(delta / 3600)}h ago"
+        return f"{int(delta / 86400)}d ago"
+
+    def _row_widget(self, *, name: str, fmt: str, behind: str, last: str) -> QWidget:
+        row = QWidget()
+        h = QHBoxLayout(row)
+        h.setSpacing(8)
+        h.setContentsMargins(0, 0, 0, 0)
+        name_lbl = QLabel(name)
+        name_lbl.setStyleSheet(
+            f"color: {TEXT_PRIMARY}; font-size: 12px; font-weight: 500;"
+        )
+        fmt_lbl = QLabel(fmt)
+        fmt_lbl.setStyleSheet(f"color: {TEXT_PRIMARY}; font-size: 12px;")
+        behind_lbl = QLabel(behind)
+        color = SUCCESS if behind == "0" else ORANGE
+        behind_lbl.setStyleSheet(f"color: {color}; font-size: 12px; font-weight: 600;")
+        last_lbl = QLabel(last)
+        last_lbl.setStyleSheet(f"color: {TEXT_DARK}; font-size: 11px;")
+        h.addWidget(name_lbl, stretch=3)
+        h.addWidget(fmt_lbl, stretch=2)
+        h.addWidget(behind_lbl, stretch=1)
+        h.addWidget(last_lbl, stretch=2)
+        return row
+
+    def _render_empty(self, message: str) -> None:
+        lbl = QLabel(message)
+        lbl.setStyleSheet(f"color: {TEXT_DARK}; font-size: 12px; padding: 8px 0;")
+        lbl.setAlignment(Qt.AlignCenter)
+        lbl.setWordWrap(True)
+        self._body_layout.addWidget(lbl)
+
+
 # -- Main Window --------------------------------------------------------------
+
 
 class VitPanel(QMainWindow):
     """Main Vit panel window (VIT Design)."""
@@ -1275,9 +1490,7 @@ class VitPanel(QMainWindow):
         self.setStyleSheet(STYLESHEET)
 
         # Frameless, always on top
-        self.setWindowFlags(
-            Qt.WindowStaysOnTopHint | Qt.FramelessWindowHint
-        )
+        self.setWindowFlags(Qt.WindowStaysOnTopHint | Qt.FramelessWindowHint)
 
         # Position: left edge of screen, full height
         screen = QGuiApplication.primaryScreen().availableGeometry()
@@ -1391,6 +1604,14 @@ class VitPanel(QMainWindow):
         self._changes_section.add_widget(self._changes_widget)
         sections_layout.addWidget(self._changes_section)
 
+        # MATRIX section — deliverable variants (9x16, 1x1, etc.)
+        self._matrix_section = CollapsibleSection("MATRIX")
+        self._matrix_widget = MatrixSection()
+        self._matrix_widget.set_project_dir(self.project_dir)
+        self._matrix_widget.refresh_requested.connect(self._matrix_widget.refresh)
+        self._matrix_section.add_widget(self._matrix_widget)
+        sections_layout.addWidget(self._matrix_section)
+
         # GRAPH section
         self._graph_section = CollapsibleSection("GRAPH")
         self._graph_widget = CommitGraphSection()
@@ -1416,15 +1637,15 @@ class VitPanel(QMainWindow):
         tab_btn.setIconSize(QSize(14, 14))
         tab_btn.setFixedSize(32, 48)
         tab_btn.setCursor(Qt.PointingHandCursor)
-        tab_btn.setStyleSheet(f"""
-            QPushButton {{
+        tab_btn.setStyleSheet("""
+            QPushButton {
                 background-color: transparent;
                 border: none;
-            }}
-            QPushButton:hover {{
+            }
+            QPushButton:hover {
                 background-color: rgba(255, 255, 255, 0.1);
                 border-radius: 4px;
-            }}
+            }
         """)
         tab_btn.clicked.connect(self.toggle_panel)
         tab_layout.addWidget(tab_btn)
@@ -1492,7 +1713,9 @@ class VitPanel(QMainWindow):
 
     def refresh_commits(self):
         _log("Refreshing commit graph...")
-        self._run_async({"action": "get_commit_graph", "limit": 0}, self._on_commits_result)
+        self._run_async(
+            {"action": "get_commit_graph", "limit": 0}, self._on_commits_result
+        )
 
     def _on_commits_result(self, result):
         try:
@@ -1506,9 +1729,15 @@ class VitPanel(QMainWindow):
                 _log(f"get_commit_graph error: {error}")
                 # Fallback to old action or show placeholder
                 if "Unknown action" in error:
-                    self._graph_widget.set_commits([
-                        {"message": "Initial commit", "branch": "main", "is_head": True},
-                    ])
+                    self._graph_widget.set_commits(
+                        [
+                            {
+                                "message": "Initial commit",
+                                "branch": "main",
+                                "is_head": True,
+                            },
+                        ]
+                    )
                 else:
                     self._graph_widget.set_commits([])
         except Exception as e:
@@ -1536,7 +1765,9 @@ class VitPanel(QMainWindow):
             return
         name = name.strip()
         self._append_log(f"Creating branch '{name}'...")
-        self._run_async({"action": "new_branch", "name": name}, self._on_new_branch_result)
+        self._run_async(
+            {"action": "new_branch", "name": name}, self._on_new_branch_result
+        )
 
     def _on_new_branch_result(self, result):
         if result.get("ok"):
@@ -1551,11 +1782,17 @@ class VitPanel(QMainWindow):
         if not target:
             return
         self._append_log(f"Switching to '{target}'...")
-        self._run_async({"action": "switch_branch", "branch": target}, self._on_switch_result)
+        self._run_async(
+            {"action": "switch_branch", "branch": target}, self._on_switch_result
+        )
 
     def _on_switch_result(self, result):
         if result.get("ok"):
-            self._append_log(f"Switched. Timeline restored." if result.get("restored") else "Switched.")
+            self._append_log(
+                "Switched. Timeline restored."
+                if result.get("restored")
+                else "Switched."
+            )
             self.refresh_branches_list()
             self.refresh_changes()
             self.refresh_commits()
@@ -1587,7 +1824,9 @@ class VitPanel(QMainWindow):
 
     def _on_push_result(self, result):
         if result.get("ok"):
-            self._append_log(f"Pushed {result.get('branch', '')}. {result.get('output', '')}")
+            self._append_log(
+                f"Pushed {result.get('branch', '')}. {result.get('output', '')}"
+            )
         else:
             self._append_log(f"Push failed: {result.get('error', '?')}")
 
@@ -1623,23 +1862,31 @@ class VitPanel(QMainWindow):
         anim.setEasingCurve(QEasingCurve.InOutQuad)
 
         if self._collapsed:
-            anim.setStartValue(QRect(
-                screen.x() - self._panel_width + self._tab_width,
-                screen.y(), self._panel_width, screen.height()
-            ))
-            anim.setEndValue(QRect(
-                screen.x(), screen.y(), self._panel_width, screen.height()
-            ))
+            anim.setStartValue(
+                QRect(
+                    screen.x() - self._panel_width + self._tab_width,
+                    screen.y(),
+                    self._panel_width,
+                    screen.height(),
+                )
+            )
+            anim.setEndValue(
+                QRect(screen.x(), screen.y(), self._panel_width, screen.height())
+            )
             self._tab.setVisible(False)
             self._collapsed = False
         else:
-            anim.setStartValue(QRect(
-                screen.x(), screen.y(), self._panel_width, screen.height()
-            ))
-            anim.setEndValue(QRect(
-                screen.x() - self._panel_width + self._tab_width,
-                screen.y(), self._panel_width, screen.height()
-            ))
+            anim.setStartValue(
+                QRect(screen.x(), screen.y(), self._panel_width, screen.height())
+            )
+            anim.setEndValue(
+                QRect(
+                    screen.x() - self._panel_width + self._tab_width,
+                    screen.y(),
+                    self._panel_width,
+                    screen.height(),
+                )
+            )
             self._tab.setVisible(True)
             self._collapsed = True
 
@@ -1655,6 +1902,7 @@ class VitPanel(QMainWindow):
 
 
 # -- Entry Point --------------------------------------------------------------
+
 
 def main():
     parser = argparse.ArgumentParser(description="Vit PySide6 Panel (VIT)")
