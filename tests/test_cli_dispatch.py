@@ -125,6 +125,19 @@ def test_branch_command_on_fresh_project(tmp_path):
     assert "main" in r.stdout
 
 
+def test_log_shows_category_badge(tmp_path):
+    """After `vit init`, the initial snapshot should render with a
+    category badge in `vit log`."""
+    target = tmp_path / "proj"
+    _run_vit("init", str(target))
+    r = _run_vit("log", cwd=str(target))
+    assert r.returncode == 0
+    # Badge appears somewhere in each line we show
+    assert any(badge in r.stdout for badge in ("[V]", "[A]", "[C]", "[ ]"))
+    # Initial snapshot message visible
+    assert "initial snapshot" in r.stdout
+
+
 # ---------- migration auto-upgrade via _require_project ----------
 
 

@@ -411,22 +411,50 @@ def cmd_diff(args):
             print("  No changes.")
 
 
+_CATEGORY_BADGE = {"video": "[V]", "audio": "[A]", "color": "[C]"}
+
+
+def _format_log_with_badges(project_dir: str, max_count: int) -> str:
+    """Render one line per commit with a category badge derived from
+    which domain files changed. Pure heuristic — no AI call — so this
+    stays fast on large logs."""
+    from .core import categorize_commit, git_log_with_changes
+
+    commits = git_log_with_changes(project_dir, max_count=max_count)
+    if not commits:
+        return ""
+    lines = []
+    for c in commits:
+        badge = _CATEGORY_BADGE.get(
+            categorize_commit(c.get("files_changed", [])), "[ ]"
+        )
+        msg = (c.get("message") or "").strip()
+        h = c.get("hash", "")
+        branch = c.get("branch", "")
+        branch_tag = f"({branch}) " if branch and branch != "main" else ""
+        lines.append(f"  {badge} {h}  {branch_tag}{msg}")
+    return "\n".join(lines)
+
+
 def cmd_log(args):
-    """Show version history."""
+    """Show version history with category badges (V/A/C)."""
     project_dir = _require_project()
     count = args.count or 20
-    output = git_log(project_dir, max_count=count)
-    if output:
-        print(output)
+    formatted = _format_log_with_badges(project_dir, max_count=count)
+    if formatted:
+        print(formatted)
         if args.summary:
             try:
                 from .ai_merge import summarize_log
 
-                summary = summarize_log(output)
+                # Still pass the raw git_log to the summarizer — the
+                # badge-prefixed text would confuse the prompt.
+                raw = git_log(project_dir, max_count=count)
+                summary = summarize_log(raw)
                 if summary:
                     print(f"\n  AI Summary: {summary}")
                 else:
-                    print("\n  AI summary unavailable (check GEMINI_API_KEY).")
+                    print("\n  AI summary unavailable.")
             except Exception:
                 print("\n  AI summary unavailable.")
     else:
