@@ -11,6 +11,7 @@ from .validator import ValidationIssue, format_issues
 @dataclass
 class MergeOption:
     """A single option for user to choose when resolving an ambiguous merge."""
+
     key: str
     label: str
     description: str = ""
@@ -30,6 +31,7 @@ class MergeOption:
 @dataclass
 class MergeDecision:
     """A per-domain merge decision from the AI analysis."""
+
     domain: str
     action: str  # "accept_ours", "accept_theirs", "merge", "needs_user_input"
     confidence: str  # "high", "medium", "low"
@@ -66,6 +68,7 @@ class MergeDecision:
 @dataclass
 class MergeAnalysis:
     """Complete analysis result from the AI merge analyzer."""
+
     summary: str
     decisions: List[MergeDecision]
     resolved: Dict[str, dict] = field(default_factory=dict)
@@ -274,6 +277,7 @@ def _load_api_key() -> Optional[str]:
 
     # Try loading from .env in project root
     from .core import find_project_root
+
     root = find_project_root()
     if root:
         env_path = os.path.join(root, ".env")
@@ -296,26 +300,36 @@ def _extract_json_from_response(content: str) -> dict:
     return json.loads(content.strip())
 
 
+def _ai_complete(
+    system_prompt: str, user_prompt: str, *, json_mode: bool = False
+) -> Optional[str]:
+    """Run a single completion via the pluggable AI provider.
+
+    Returns the provider's raw text, or None if every provider refused /
+    failed. Caller is responsible for parsing and tolerating non-JSON
+    returns. The project dir (if any) is used to honor `ai.provider` in
+    .vit/config.json.
+    """
+    from .ai import get_provider
+    from .core import find_project_root
+
+    project_dir = find_project_root()
+    provider = get_provider(project_dir)
+    resp = provider.complete(system_prompt, user_prompt, json_mode=json_mode)
+    if not resp.ok:
+        return None
+    return resp.text
+
+
+class _AIUnavailable(Exception):
+    """Raised when no AI provider is usable — caller falls back."""
+
+
 def _get_genai_model(system_prompt: str):
-    """Get a configured Gemini model, handling import and API key setup."""
-    try:
-        import google.generativeai as genai
-    except ImportError:
-        raise ImportError(
-            "'google-generativeai' package not installed. Run: pip install google-generativeai"
-        )
-
-    api_key = _load_api_key()
-    if not api_key:
-        raise ValueError(
-            "GEMINI_API_KEY not set. Add it to .env or set the environment variable."
-        )
-
-    genai.configure(api_key=api_key)
-
-    return genai.GenerativeModel(
-        "gemini-2.5-flash",
-        system_instruction=system_prompt,
+    """Deprecated shim. Kept for source compatibility with any external
+    callers; raises to force callers to use _ai_complete instead."""
+    raise _AIUnavailable(
+        "direct Gemini access removed — use _ai_complete() via vit.ai factory"
     )
 
 
@@ -338,26 +352,23 @@ def ai_analyze_merge(
     Returns:
         MergeAnalysis with per-domain decisions, or None if analysis fails
     """
-    try:
-        model = _get_genai_model(MERGE_ANALYSIS_SYSTEM_PROMPT)
-    except (ImportError, ValueError) as e:
-        print(f"Error: {e}")
-        return None
-
     prompt = _build_analysis_prompt(
         base_files, ours_files, theirs_files, issues, conflicted_files or []
     )
 
-    try:
-        response = model.generate_content(prompt)
-        data = _extract_json_from_response(response.text)
-        return MergeAnalysis.from_dict(data)
+    text = _ai_complete(MERGE_ANALYSIS_SYSTEM_PROMPT, prompt, json_mode=True)
+    if text is None:
+        print("Error: no AI provider available (see `vit doctor`).")
+        return None
 
+    try:
+        data = _extract_json_from_response(text)
+        return MergeAnalysis.from_dict(data)
     except json.JSONDecodeError as e:
         print(f"Error: AI returned invalid JSON: {e}")
         return None
     except Exception as e:
-        print(f"Error calling Gemini API: {e}")
+        print(f"Error parsing AI response: {e}")
         return None
 
 
@@ -383,23 +394,22 @@ def ai_resolve_clarifications(
     if not questions:
         return {}
 
-    try:
-        model = _get_genai_model(MERGE_CLARIFICATION_SYSTEM_PROMPT)
-    except (ImportError, ValueError) as e:
-        print(f"Error: {e}")
+    prompt = _build_clarification_prompt(
+        analysis, user_answers, ours_files, theirs_files
+    )
+
+    text = _ai_complete(MERGE_CLARIFICATION_SYSTEM_PROMPT, prompt, json_mode=True)
+    if text is None:
+        print("Error: no AI provider available (see `vit doctor`).")
         return None
 
-    prompt = _build_clarification_prompt(analysis, user_answers, ours_files, theirs_files)
-
     try:
-        response = model.generate_content(prompt)
-        return _extract_json_from_response(response.text)
-
+        return _extract_json_from_response(text)
     except json.JSONDecodeError as e:
         print(f"Error: AI returned invalid JSON: {e}")
         return None
     except Exception as e:
-        print(f"Error calling Gemini API: {e}")
+        print(f"Error parsing AI response: {e}")
         return None
 
 
@@ -410,59 +420,21 @@ def ai_merge(
     issues: List[ValidationIssue],
     conflicted_files: Optional[List[str]] = None,
 ) -> Optional[Dict[str, dict]]:
-    """Use Gemini API to resolve merge conflicts (legacy one-shot API).
-
-    Args:
-        base_files: Domain files from merge base
-        ours_files: Domain files from current branch
-        theirs_files: Domain files from incoming branch
-        issues: Validation issues detected
-        conflicted_files: Files with git merge conflicts
-
-    Returns:
-        Dict of resolved domain files, or None if resolution fails
-    """
-    try:
-        import google.generativeai as genai
-    except ImportError:
-        print("Error: 'google-generativeai' package not installed. Run: pip install google-generativeai")
-        return None
-
-    api_key = _load_api_key()
-    if not api_key:
-        print("Error: GEMINI_API_KEY not set. Add it to .env or set the environment variable.")
-        return None
-
-    genai.configure(api_key=api_key)
-
+    """Legacy one-shot merge resolver, now provider-agnostic."""
     prompt = _build_merge_prompt(
         base_files, ours_files, theirs_files, issues, conflicted_files or []
     )
-
+    text = _ai_complete(MERGE_SYSTEM_PROMPT, prompt, json_mode=True)
+    if text is None:
+        print("Error: no AI provider available (see `vit doctor`).")
+        return None
     try:
-        model = genai.GenerativeModel(
-            "gemini-2.5-flash",
-            system_instruction=MERGE_SYSTEM_PROMPT,
-        )
-        response = model.generate_content(prompt)
-
-        # Extract JSON from response
-        content = response.text
-
-        # The LLM might wrap it in ```json ... ```
-        if "```json" in content:
-            content = content.split("```json")[1].split("```")[0]
-        elif "```" in content:
-            content = content.split("```")[1].split("```")[0]
-
-        resolved = json.loads(content.strip())
-        return resolved
-
+        return _extract_json_from_response(text)
     except json.JSONDecodeError as e:
         print(f"Error: AI returned invalid JSON: {e}")
         return None
     except Exception as e:
-        print(f"Error calling Gemini API: {e}")
+        print(f"Error parsing AI response: {e}")
         return None
 
 
@@ -479,7 +451,9 @@ def _display_analysis(analysis: MergeAnalysis, branch: str) -> None:
     if auto_resolved:
         print("  Auto-resolved decisions:")
         for decision in auto_resolved:
-            conf_icon = {"high": "+", "medium": "~", "low": "?"}.get(decision.confidence, "?")
+            conf_icon = {"high": "+", "medium": "~", "low": "?"}.get(
+                decision.confidence, "?"
+            )
             print(f"    [{conf_icon}] {decision.domain}: {decision.action}")
             print(f"        {decision.reasoning}")
         print()
@@ -514,7 +488,9 @@ def _prompt_user_choices(analysis: MergeAnalysis) -> Optional[Dict[str, str]]:
 
         while True:
             try:
-                choice = input(f"    {decision.domain} [{valid_keys_str}]: ").strip().upper()
+                choice = (
+                    input(f"    {decision.domain} [{valid_keys_str}]: ").strip().upper()
+                )
             except (EOFError, KeyboardInterrupt):
                 print("\n  Merge cancelled.")
                 return None
@@ -569,7 +545,7 @@ def merge_with_ai(
     """
     from .differ import format_diff
 
-    print(f"\n  Analyzing merge with AI...")
+    print("\n  Analyzing merge with AI...")
 
     # Phase 1: Get structured analysis
     analysis = ai_analyze_merge(
@@ -613,7 +589,9 @@ def merge_with_ai(
     # Show final diff
     print("\n  Final changes to be applied:")
     print("  " + "-" * 50)
-    diff_output = format_diff(ours_files, merged_files, branch_info=f"AI merge for '{branch}'")
+    diff_output = format_diff(
+        ours_files, merged_files, branch_info=f"AI merge for '{branch}'"
+    )
     if diff_output.strip():
         print(diff_output)
     else:
@@ -684,16 +662,6 @@ def analyze_branch_comparison(
     Returns:
         Dict with summary, conflicts, recommendation, and explanation
     """
-    try:
-        model = _get_genai_model("You are a video editing merge advisor.")
-    except (ImportError, ValueError) as e:
-        return {
-            "summary_a": f"Branch with {sum(len(v) for v in changes_a.values())} changes",
-            "summary_b": f"Branch with {sum(len(v) for v in changes_b.values())} changes",
-            "conflicts": [],
-            "recommendation": "manual_review",
-            "explanation": f"AI analysis unavailable: {e}",
-        }
 
     # Format changes for the prompt
     def format_changes(changes: dict) -> str:
@@ -702,7 +670,9 @@ def analyze_branch_comparison(
             if items:
                 lines.append(f"  {category.upper()}: {len(items)} changes")
                 for item in items[:5]:  # Limit to first 5 per category
-                    lines.append(f"    - {item.get('name', item.get('id', 'unknown'))}: {item.get('type', 'modified')}")
+                    lines.append(
+                        f"    - {item.get('name', item.get('id', 'unknown'))}: {item.get('type', 'modified')}"
+                    )
                 if len(items) > 5:
                     lines.append(f"    - ... and {len(items) - 5} more")
         return "\n".join(lines) if lines else "  No changes"
@@ -714,9 +684,14 @@ def analyze_branch_comparison(
         changes_b=format_changes(changes_b),
     )
 
+    text = _ai_complete(
+        "You are a video editing merge advisor.", prompt, json_mode=True
+    )
+
     try:
-        response = model.generate_content(prompt)
-        return _extract_json_from_response(response.text)
+        if text is None:
+            raise RuntimeError("no AI provider available")
+        return _extract_json_from_response(text)
     except Exception as e:
         # Fallback to simple heuristic
         a_count = sum(len(v) for v in changes_a.values())
@@ -791,7 +766,9 @@ def classify_commit_type(
     # Quick heuristic check first
     audio_files = [f for f in files_changed if "audio" in f.lower()]
     color_files = [f for f in files_changed if "color" in f.lower()]
-    video_files = [f for f in files_changed if "cuts" in f.lower() or "video" in f.lower()]
+    video_files = [
+        f for f in files_changed if "cuts" in f.lower() or "video" in f.lower()
+    ]
 
     # If clear majority, skip AI
     total = len(files_changed)
@@ -804,28 +781,30 @@ def classify_commit_type(
             return "video"
 
     # Use AI for ambiguous cases
-    try:
-        model = _get_genai_model("You are a video editing commit classifier.")
-    except (ImportError, ValueError):
-        # Fallback to simple heuristic
-        from .core import categorize_commit
-        return categorize_commit(files_changed)
-
     prompt = COMMIT_CLASSIFICATION_PROMPT.format(
         hash=commit_hash,
         message=message or "No message",
         files=", ".join(files_changed) if files_changed else "None",
     )
 
+    text = _ai_complete(
+        "You are a video editing commit classifier.", prompt, json_mode=True
+    )
+
+    if text is None:
+        from .core import categorize_commit
+
+        return categorize_commit(files_changed)
+
     try:
-        response = model.generate_content(prompt)
-        data = _extract_json_from_response(response.text)
+        data = _extract_json_from_response(text)
         category = data.get("category", "video")
         if category in ("audio", "video", "color"):
             return category
         return "video"
     except Exception:
         from .core import categorize_commit
+
         return categorize_commit(files_changed)
 
 
@@ -863,22 +842,15 @@ def suggest_commit_message(diff_text: str) -> Optional[str]:
     if not diff_text or not diff_text.strip():
         return None
 
-    try:
-        model = _get_genai_model("You are a video editing commit message writer.")
-    except (ImportError, ValueError):
-        return None
-
     prompt = COMMIT_MESSAGE_PROMPT.format(diff_text=diff_text[:2000])
-
-    try:
-        response = model.generate_content(prompt)
-        message = response.text.strip().strip('"').strip("'")
-        # Enforce max length
-        if len(message) > 72:
-            message = message[:69] + "..."
-        return message
-    except Exception:
+    text = _ai_complete("You are a video editing commit message writer.", prompt)
+    if text is None:
         return None
+
+    message = text.strip().strip('"').strip("'")
+    if len(message) > 72:
+        message = message[:69] + "..."
+    return message
 
 
 # -- VIT CLI: AI Log Summary --------------------------------------------------
@@ -908,15 +880,8 @@ def summarize_log(commits_text: str) -> Optional[str]:
     if not commits_text or not commits_text.strip():
         return None
 
-    try:
-        model = _get_genai_model("You are a video editing project summarizer.")
-    except (ImportError, ValueError):
-        return None
-
     prompt = LOG_SUMMARY_PROMPT.format(commits_text=commits_text[:3000])
-
-    try:
-        response = model.generate_content(prompt)
-        return response.text.strip()
-    except Exception:
+    text = _ai_complete("You are a video editing project summarizer.", prompt)
+    if text is None:
         return None
+    return text.strip()
