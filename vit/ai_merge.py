@@ -1,10 +1,12 @@
-"""AI-powered semantic merge resolution using Gemini API."""
+"""AI-powered semantic merge resolution via the pluggable provider layer."""
 
 import json
 import os
 from dataclasses import dataclass, field
 from typing import Dict, List, Optional
 
+from .ai import get_provider
+from .core import find_project_root
 from .validator import ValidationIssue, format_issues
 
 
@@ -276,7 +278,6 @@ def _load_api_key() -> Optional[str]:
         return key
 
     # Try loading from .env in project root
-    from .core import find_project_root
 
     root = find_project_root()
     if root:
@@ -310,9 +311,6 @@ def _ai_complete(
     returns. The project dir (if any) is used to honor `ai.provider` in
     .vit/config.json.
     """
-    from .ai import get_provider
-    from .core import find_project_root
-
     project_dir = find_project_root()
     provider = get_provider(project_dir)
     resp = provider.complete(system_prompt, user_prompt, json_mode=json_mode)

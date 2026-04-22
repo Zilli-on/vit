@@ -7,13 +7,12 @@ are handled here; the subprocess sends JSON requests over the socket.
 
 Run from Workspace > Scripts > Vit - Panel.
 """
+
 import json
 import os
 import socket
 import subprocess
 import sys
-import tempfile
-import threading
 import traceback
 
 # Bootstrap: find the vit package
@@ -30,7 +29,11 @@ else:
     if os.path.exists(_pf):
         with open(_pf) as _f:
             _root = _f.read().strip()
-        if _root and os.path.isdir(os.path.join(_root, "vit")) and _root not in sys.path:
+        if (
+            _root
+            and os.path.isdir(os.path.join(_root, "vit"))
+            and _root not in sys.path
+        ):
             sys.path.insert(0, _root)
 
 
@@ -41,6 +44,7 @@ def _log(msg):
 def _find_system_python():
     """Find a system Python 3 that has PySide6 installed."""
     import glob
+
     is_windows = sys.platform == "win32"
 
     # Venv binary name differs by platform
@@ -72,7 +76,9 @@ def _find_system_python():
         home = os.path.expanduser("~")
         appdata = os.environ.get("LOCALAPPDATA", "")
         programfiles = os.environ.get("PROGRAMFILES", "C:\\Program Files")
-        programfiles_x86 = os.environ.get("PROGRAMFILES(X86)", "C:\\Program Files (x86)")
+        programfiles_x86 = os.environ.get(
+            "PROGRAMFILES(X86)", "C:\\Program Files (x86)"
+        )
 
         # py launcher (most reliable on Windows)
         candidates.append("py")
@@ -80,7 +86,9 @@ def _find_system_python():
         # AppData installs (default for non-admin pip installs)
         for pat in [
             os.path.join(appdata, "Programs", "Python", "Python3*", "python.exe"),
-            os.path.join(appdata, "Programs", "Python", "Python3*", "Scripts", "python.exe"),
+            os.path.join(
+                appdata, "Programs", "Python", "Python3*", "Scripts", "python.exe"
+            ),
         ]:
             for p in sorted(glob.glob(pat), reverse=True):
                 candidates.append(p)
@@ -132,13 +140,15 @@ def _find_system_python():
 
     for python in candidates:
         # For bare command names (py, python, python3) skip the exists check
-        is_bare_cmd = not os.sep in python and not os.path.isabs(python)
+        is_bare_cmd = os.sep not in python and not os.path.isabs(python)
         if not is_bare_cmd and not os.path.exists(python):
             continue
         try:
             result = subprocess.run(
                 [python, "-c", "import PySide6; print('ok')"],
-                capture_output=True, text=True, timeout=10,
+                capture_output=True,
+                text=True,
+                timeout=10,
             )
             if result.returncode == 0 and "ok" in result.stdout:
                 return python
@@ -156,10 +166,15 @@ def handle_request(request, resolve_app, project_dir):
 
     try:
         if action == "ping":
-            return {"ok": True}
+            return {"ok": True, "project_dir": project_dir, "pid": os.getpid()}
+
+        elif action == "quit":
+            # Clean shutdown requested by `vit panel stop`.
+            return {"ok": True, "quit": True}
 
         elif action == "get_branch":
             from vit.core import git_current_branch
+
             branch = git_current_branch(project_dir)
             return {"ok": True, "branch": branch}
 
@@ -185,6 +200,7 @@ def handle_request(request, resolve_app, project_dir):
 
         elif action == "new_branch":
             from vit.core import git_branch
+
             name = request.get("name", "").strip()
             if not name:
                 return {"ok": False, "error": "No branch name provided."}
@@ -193,6 +209,7 @@ def handle_request(request, resolve_app, project_dir):
 
         elif action == "list_branches":
             from vit.core import git_list_branches, git_current_branch
+
             branches = git_list_branches(project_dir)
             current = git_current_branch(project_dir)
             return {"ok": True, "branches": branches, "current": current}
@@ -209,15 +226,22 @@ def handle_request(request, resolve_app, project_dir):
             project = resolve_app.GetProjectManager().GetCurrentProject()
             timeline = project.GetCurrentTimeline()
             if timeline:
-                deserialize_timeline(timeline, project, project_dir, resolve_app=resolve_app)
+                deserialize_timeline(
+                    timeline, project, project_dir, resolve_app=resolve_app
+                )
                 return {"ok": True, "branch": target, "restored": True}
             return {"ok": True, "branch": target, "restored": False}
 
         elif action == "merge":
             from vit.core import (
-                git_add, git_commit, git_merge, git_is_clean,
-                git_current_branch, git_list_conflicted_files,
-                git_checkout_theirs, GitError,
+                git_add,
+                git_commit,
+                git_merge,
+                git_is_clean,
+                git_current_branch,
+                git_list_conflicted_files,
+                git_checkout_theirs,
+                GitError,
             )
             from vit.serializer import serialize_timeline
             from vit.deserializer import deserialize_timeline
@@ -231,7 +255,9 @@ def handle_request(request, resolve_app, project_dir):
                 project = resolve_app.GetProjectManager().GetCurrentProject()
                 timeline = project.GetCurrentTimeline()
                 if timeline:
-                    serialize_timeline(timeline, project, project_dir, resolve_app=resolve_app)
+                    serialize_timeline(
+                        timeline, project, project_dir, resolve_app=resolve_app
+                    )
                 git_add(project_dir, ["timeline/", "assets/", ".vit/", ".gitignore"])
                 try:
                     git_commit(project_dir, f"vit: auto-save before merging '{target}'")
@@ -242,13 +268,19 @@ def handle_request(request, resolve_app, project_dir):
             success, output = git_merge(project_dir, target)
             if not success:
                 conflicted = git_list_conflicted_files(project_dir)
-                auto_resolvable = [f for f in conflicted if f.endswith(".drx") or f.startswith("timeline/")]
+                auto_resolvable = [
+                    f
+                    for f in conflicted
+                    if f.endswith(".drx") or f.startswith("timeline/")
+                ]
                 non_resolvable = [f for f in conflicted if f not in auto_resolvable]
                 if auto_resolvable and not non_resolvable:
                     try:
                         git_checkout_theirs(project_dir, auto_resolvable)
                         git_add(project_dir, auto_resolvable)
-                        git_commit(project_dir, f"vit: merged '{target}' (auto-resolved)")
+                        git_commit(
+                            project_dir, f"vit: merged '{target}' (auto-resolved)"
+                        )
                         success = True
                     except GitError as e:
                         return {"ok": False, "error": f"Auto-resolve failed: {e}"}
@@ -258,14 +290,25 @@ def handle_request(request, resolve_app, project_dir):
                 project = resolve_app.GetProjectManager().GetCurrentProject()
                 timeline = project.GetCurrentTimeline()
                 if timeline:
-                    deserialize_timeline(timeline, project, project_dir, resolve_app=resolve_app)
+                    deserialize_timeline(
+                        timeline, project, project_dir, resolve_app=resolve_app
+                    )
                 issue_text = format_issues(issues) if issues else ""
-                return {"ok": True, "branch": target, "current": current, "issues": issue_text}
+                return {
+                    "ok": True,
+                    "branch": target,
+                    "current": current,
+                    "issues": issue_text,
+                }
             else:
-                return {"ok": False, "error": f"Merge conflicts. Use terminal: vit merge {target}"}
+                return {
+                    "ok": False,
+                    "error": f"Merge conflicts. Use terminal: vit merge {target}",
+                }
 
         elif action == "push":
             from vit.core import git_current_branch, git_push, GitError
+
             branch = git_current_branch(project_dir)
             try:
                 output = git_push(project_dir, "origin", branch)
@@ -286,11 +329,14 @@ def handle_request(request, resolve_app, project_dir):
             project = resolve_app.GetProjectManager().GetCurrentProject()
             timeline = project.GetCurrentTimeline()
             if timeline:
-                deserialize_timeline(timeline, project, project_dir, resolve_app=resolve_app)
+                deserialize_timeline(
+                    timeline, project, project_dir, resolve_app=resolve_app
+                )
             return {"ok": True, "branch": branch, "output": output.strip()}
 
         elif action == "status":
             from vit.core import git_current_branch, git_status, git_log
+
             branch = git_current_branch(project_dir)
             status = git_status(project_dir)
             log_out = git_log(project_dir, max_count=5)
@@ -304,19 +350,23 @@ def handle_request(request, resolve_app, project_dir):
         elif action == "get_changes":
             from vit.differ import get_changes_by_category
             from vit.serializer import serialize_timeline
+
             try:
                 # Re-serialize current timeline state before diffing
                 project = resolve_app.GetProjectManager().GetCurrentProject()
                 timeline = project.GetCurrentTimeline()
                 if timeline:
-                    serialize_timeline(timeline, project, project_dir, resolve_app=resolve_app)
+                    serialize_timeline(
+                        timeline, project, project_dir, resolve_app=resolve_app
+                    )
                 changes = get_changes_by_category(project_dir, "HEAD")
                 return {"ok": True, "changes": changes}
-            except Exception as e:
+            except Exception:
                 return {"ok": True, "changes": {"audio": [], "video": [], "color": []}}
 
         elif action == "get_commit_history":
             from vit.core import git_log_with_changes, categorize_commit
+
             limit = request.get("limit", 10)
             commits = git_log_with_changes(project_dir, max_count=limit)
             # Add category to each commit
@@ -326,11 +376,14 @@ def handle_request(request, resolve_app, project_dir):
 
         elif action == "compare_branches":
             from vit.differ import get_branch_diff_by_category
+
             branch_a = request.get("branch_a", "")
             branch_b = request.get("branch_b", "")
             if not branch_a or not branch_b:
                 return {"ok": False, "error": "Both branch_a and branch_b required"}
-            changes_a, changes_b = get_branch_diff_by_category(project_dir, branch_a, branch_b)
+            changes_a, changes_b = get_branch_diff_by_category(
+                project_dir, branch_a, branch_b
+            )
             return {
                 "ok": True,
                 "branch_a": branch_a,
@@ -342,13 +395,18 @@ def handle_request(request, resolve_app, project_dir):
         elif action == "analyze_merge":
             from vit.differ import get_branch_diff_by_category
             from vit.ai_merge import analyze_branch_comparison
+
             branch_a = request.get("branch_a", "")
             branch_b = request.get("branch_b", "")
             if not branch_a or not branch_b:
                 return {"ok": False, "error": "Both branch_a and branch_b required"}
-            changes_a, changes_b = get_branch_diff_by_category(project_dir, branch_a, branch_b)
+            changes_a, changes_b = get_branch_diff_by_category(
+                project_dir, branch_a, branch_b
+            )
             try:
-                analysis = analyze_branch_comparison(branch_a, branch_b, changes_a, changes_b)
+                analysis = analyze_branch_comparison(
+                    branch_a, branch_b, changes_a, changes_b
+                )
                 return {
                     "ok": True,
                     "branch_a": branch_a,
@@ -364,24 +422,30 @@ def handle_request(request, resolve_app, project_dir):
                     "branch_b": branch_b,
                     "changes_a": changes_a,
                     "changes_b": changes_b,
-                    "analysis": {"recommendation": "Manual review required", "explanation": str(e)},
+                    "analysis": {
+                        "recommendation": "Manual review required",
+                        "explanation": str(e),
+                    },
                 }
 
         elif action == "classify_commit":
             from vit.ai_merge import classify_commit_type
+
             commit_hash = request.get("hash", "")
             files_changed = request.get("files", [])
             message = request.get("message", "")
             try:
                 category = classify_commit_type(commit_hash, files_changed, message)
                 return {"ok": True, "hash": commit_hash, "category": category}
-            except Exception as e:
+            except Exception:
                 from vit.core import categorize_commit
+
                 fallback = categorize_commit(files_changed)
                 return {"ok": True, "hash": commit_hash, "category": fallback}
 
         elif action == "get_commit_graph":
             from vit.core import git_log_with_topology
+
             limit = request.get("limit", 30)
             try:
                 data = git_log_with_topology(project_dir, max_count=limit)
@@ -414,6 +478,39 @@ def handle_request(request, resolve_app, project_dir):
         return {"ok": False, "error": str(e)}
 
 
+def _state_file_path() -> str:
+    return os.path.expanduser(os.path.join("~", ".vit", "panel.state"))
+
+
+def _write_panel_state(port: int, project_dir: str) -> None:
+    """Record the running panel's socket + pid for `vit panel status`."""
+    import time as _time
+
+    path = _state_file_path()
+    try:
+        os.makedirs(os.path.dirname(path), exist_ok=True)
+        payload = {
+            "port": port,
+            "pid": os.getpid(),
+            "project_dir": project_dir,
+            "started_at": _time.time(),
+        }
+        with open(path, "w", encoding="utf-8") as f:
+            json.dump(payload, f, indent=2, sort_keys=True)
+    except Exception:
+        # Best-effort — health file is diagnostic, not load-bearing.
+        pass
+
+
+def _clear_panel_state() -> None:
+    path = _state_file_path()
+    try:
+        if os.path.exists(path):
+            os.remove(path)
+    except Exception:
+        pass
+
+
 def run_server(resolve_app, project_dir):
     """Start a socket server, spawn the Qt subprocess, and handle requests."""
     server = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
@@ -424,6 +521,7 @@ def run_server(resolve_app, project_dir):
     server.settimeout(30)  # 30s timeout for initial connection
 
     _log(f"Launcher listening on port {port}")
+    _write_panel_state(port, project_dir)
 
     # Find system Python with PySide6
     python = _find_system_python()
@@ -434,6 +532,7 @@ def run_server(resolve_app, project_dir):
             _log("Falling back to tkinter panel...")
             server.close()
             from resolve_plugin.vit_panel_tkinter import main as tkinter_main
+
             tkinter_main()
             return
         except ImportError:
@@ -445,7 +544,9 @@ def run_server(resolve_app, project_dir):
     # Find vit_panel_qt.py — __file__ may not be defined in Resolve
     qt_script = None
     try:
-        qt_script = os.path.join(os.path.dirname(os.path.realpath(__file__)), "vit_panel_qt.py")
+        qt_script = os.path.join(
+            os.path.dirname(os.path.realpath(__file__)), "vit_panel_qt.py"
+        )
     except NameError:
         pass
     if not qt_script or not os.path.exists(qt_script):
@@ -506,6 +607,7 @@ def run_server(resolve_app, project_dir):
     except Exception as e:
         _log(f"Server error: {e}")
         import traceback as tb
+
         _log(tb.format_exc())
     finally:
         if conn:
@@ -515,6 +617,7 @@ def run_server(resolve_app, project_dir):
                 pass
         server.close()
         proc.terminate()
+        _clear_panel_state()
         _log("Launcher done.")
 
 

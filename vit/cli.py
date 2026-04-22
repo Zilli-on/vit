@@ -511,6 +511,13 @@ def cmd_matrix(args):
     sys.exit(run_cli(getattr(args, "matrix_cmd", None), args))
 
 
+def cmd_panel(args):
+    """Dispatch `vit panel <subcmd>` to the panel control module."""
+    from .panel_control import run_cli
+
+    sys.exit(run_cli(getattr(args, "panel_cmd", None), args))
+
+
 if sys.platform == "win32":
     RESOLVE_SCRIPTS_DIR = os.path.join(
         os.environ.get("APPDATA", ""),
@@ -950,6 +957,29 @@ def main():
         "--dry-run", action="store_true", help="Show what would be replayed, do nothing"
     )
     m_rederive.set_defaults(func=cmd_matrix, matrix_cmd="rederive")
+
+    # panel — Resolve panel health / control
+    p_panel = subparsers.add_parser(
+        "panel", help="Inspect or control the running Resolve panel"
+    )
+    panel_sub = p_panel.add_subparsers(dest="panel_cmd")
+    p_panel.set_defaults(func=cmd_panel, panel_cmd=None)
+
+    pn_status = panel_sub.add_parser(
+        "status", help="Report whether a panel is alive (default subcommand)"
+    )
+    pn_status.set_defaults(func=cmd_panel, panel_cmd="status")
+
+    pn_log = panel_sub.add_parser("log", help="Tail the panel's invocation log")
+    pn_log.add_argument(
+        "-n", "--tail", type=int, default=40, help="Number of lines (default 40)"
+    )
+    pn_log.set_defaults(func=cmd_panel, panel_cmd="log")
+
+    pn_stop = panel_sub.add_parser(
+        "stop", help="Ask the running panel to shut down cleanly"
+    )
+    pn_stop.set_defaults(func=cmd_panel, panel_cmd="stop")
 
     # clone
     p_clone = subparsers.add_parser("clone", help="Clone a remote vit project")

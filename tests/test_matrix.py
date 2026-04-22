@@ -162,6 +162,48 @@ def test_rederive_replays_parent_commit(project_dir):
     assert cfg.variants["v1"].last_rederive_hash  # non-empty
 
 
+def test_commits_behind_counts_zero_after_rederive_despite_hash_change(project_dir):
+    """After cherry-pick the replayed commits have new hashes. Plain
+    rev-list would still report 'behind'; `git cherry` pairs by patch-id
+    so the semantic behind count must reach zero."""
+    matrix.cmd_add(project_dir, "v1")
+    path = os.path.join(project_dir, "README.md")
+    with open(path, "w") as f:
+        f.write("hero v2")
+    subprocess.run(["git", "add", "README.md"], cwd=project_dir, check=True)
+    subprocess.run(["git", "commit", "-m", "main: v2"], cwd=project_dir, check=True)
+    matrix.cmd_rederive(project_dir, "v1")
+
+    # Sanity check: the commit hashes must actually differ — if they
+    # happened to match, this test would pass for the wrong reason.
+    v1_head = subprocess.run(
+        ["git", "rev-parse", "v1"], cwd=project_dir, capture_output=True, text=True
+    ).stdout.strip()
+    main_head = subprocess.run(
+        ["git", "rev-parse", "main"], cwd=project_dir, capture_output=True, text=True
+    ).stdout.strip()
+    assert v1_head != main_head, "cherry-pick should produce a new hash"
+
+    # Plain rev-list would say "1 behind" here; git cherry must say 0.
+    rev_list = subprocess.run(
+        ["git", "rev-list", "--count", "v1..main"],
+        cwd=project_dir,
+        capture_output=True,
+        text=True,
+    )
+    assert int(rev_list.stdout.strip()) == 1
+    assert matrix._commits_behind(project_dir, "v1", "main") == 0
+
+
+def test_commits_behind_falls_back_on_bogus_parent(project_dir):
+    """If git cherry errors (e.g. parent branch doesn't exist) the
+    helper must not crash; it falls back to rev-list or returns 0."""
+    matrix.cmd_add(project_dir, "v1")
+    # 'not-a-branch' doesn't exist; both cherry and rev-list will fail.
+    n = matrix._commits_behind(project_dir, "v1", "not-a-branch")
+    assert n == 0
+
+
 def test_rederive_dry_run_does_not_move_branch(project_dir):
     matrix.cmd_add(project_dir, "v1")
 
