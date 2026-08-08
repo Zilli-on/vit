@@ -12,16 +12,12 @@ from typing import Dict, List
 
 from .json_writer import read_all_domain_files, read_json
 from .models import (
-    AudioItem,
     AudioTrack,
     ColorGrade,
     ColorNodeGrade,
     Marker,
     SpeedChange,
-    TextProperties,
     TimelineMetadata,
-    Transform,
-    VideoItem,
     VideoTrack,
 )
 

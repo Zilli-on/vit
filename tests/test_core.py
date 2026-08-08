@@ -7,19 +7,16 @@ import tempfile
 import pytest
 
 from vit.core import (
-    GitError,
     find_project_root,
     git_add,
     git_branch,
     git_checkout,
     git_commit,
     git_current_branch,
-    git_diff,
     git_init,
     git_list_branches,
     git_log,
     git_merge,
-    git_merge_base,
     git_revert,
     git_show_file,
     git_status,

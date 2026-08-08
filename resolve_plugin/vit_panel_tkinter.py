@@ -39,7 +39,7 @@ def main():
 
     from resolve_plugin.plugin_utils import (
         get_project_dir, ask_string, ask_choice,
-        show_error, show_message, _log,
+        show_error, show_message,
     )
 
     project_dir = get_project_dir()
