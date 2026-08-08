@@ -82,21 +82,6 @@ vit matrix rederive 9x16-short        # cherry-pick main's new commits
 variant. `rederive` replays via `git cherry-pick`; stops on conflict and
 tells you to resolve with `git cherry-pick --continue`.
 
-## Zero-cost compliance
-
-With this fork:
-
-- **Ollama running locally** → full merge / commit-message / log-summary
-  / branch-comparison AI, entirely offline, zero API cost.
-- **No Ollama, no GEMINI_API_KEY, no `claude` CLI** → heuristic
-  fallback; vit works but gives no AI-assisted merge suggestions.
-- **`claude` CLI installed** (Claude Code subscribers) → Claude handles
-  AI tasks without needing an API key.
-
-`pip install vit` (base) is ~5 MB and pulls only `rich` as a runtime
-dep. Qt + Gemini SDK are opt-in via `vit[qt]`, `vit[gemini]`, or
-`vit[all]`.
-
 ### 5. Resolve panel control (`vit panel`)
 
 - `vit panel status` — reads `~/.vit/panel.state` (port + pid written by
