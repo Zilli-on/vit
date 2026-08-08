@@ -77,7 +77,7 @@ def test_color_json_has_grades(project_dir):
 def test_color_json_captures_adjustments(project_dir):
     """color.json should capture clip-level Contrast and Saturation from GetProperty()."""
     from tests.mock_resolve import (
-        MockTimelineItem, MockMediaPoolItem, MockTimeline, MockProject, MockResolve,
+        MockTimelineItem, MockMediaPoolItem, MockTimeline, MockProject,
     )
 
     media = MockMediaPoolItem(filepath="/Volumes/Media/Clip.mov", frames=1000)

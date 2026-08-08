@@ -10,8 +10,6 @@ All dialogs have print()-based fallbacks so scripts never silently fail.
 
 import os
 import sys
-import traceback
-from datetime import datetime
 
 VIT_USER_DIR = os.path.expanduser("~/.vit")
 LAST_PROJECT_FILE = os.path.join(VIT_USER_DIR, "last_project")

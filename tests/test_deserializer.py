@@ -8,7 +8,6 @@ import pytest
 from vit.serializer import serialize_timeline
 from vit.deserializer import (
     capture_restore_state,
-    _collect_video_clip_infos,
     _create_fresh_timeline,
     _create_timeline_with_clips,
     _timeline_has_clips,

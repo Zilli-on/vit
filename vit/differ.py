@@ -4,7 +4,6 @@ import json
 import os
 from typing import Dict, List, Optional, Tuple
 
-from .json_writer import read_json
 from .models import (
     COMPOSITE_MODE_NAMES,
     DYNAMIC_ZOOM_EASE_NAMES,

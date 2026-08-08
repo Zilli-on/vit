@@ -1,7 +1,5 @@
 """Tests for differ.py — human-readable diff formatting."""
 
-import pytest
-
 from vit.differ import (
     diff_cuts,
     diff_color,
